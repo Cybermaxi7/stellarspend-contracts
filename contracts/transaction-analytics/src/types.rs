@@ -59,6 +59,29 @@ pub struct CategoryMetrics {
     pub volume_percentage_bps: u32,
 }
 
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct RatingInput {
+    pub tx_id: u64,
+    pub score: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum RatingStatus {
+    Success,
+    InvalidScore,
+    UnknownTransaction,
+}
+
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct RatingResult {
+    pub tx_id: u64,
+    pub score: u32,
+    pub status: RatingStatus,
+}
+
 /// Storage keys for contract state.
 #[derive(Clone)]
 #[contracttype]
@@ -71,6 +94,8 @@ pub enum DataKey {
     BatchMetrics(u64),
     /// Total transactions processed lifetime
     TotalTxProcessed,
+    KnownTransaction(u64),
+    Rating(u64, Address),
 }
 
 /// Events emitted by the analytics contract.
@@ -105,5 +130,16 @@ impl AnalyticsEvents {
     pub fn high_value_alert(env: &Env, batch_id: u64, tx_id: u64, amount: i128) {
         let topics = (symbol_short!("alert"), symbol_short!("highval"));
         env.events().publish(topics, (batch_id, tx_id, amount));
+    }
+
+    pub fn rating_submitted(
+        env: &Env,
+        user: &Address,
+        tx_id: u64,
+        score: u32,
+        status: RatingStatus,
+    ) {
+        let topics = (symbol_short!("rating"), user.clone(), tx_id);
+        env.events().publish(topics, (score, status));
     }
 }
