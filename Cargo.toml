@@ -4,6 +4,8 @@ members = [
     "contracts/transaction-analytics",
     "contracts/contract-upgrade/old_contract",
     "contracts/contract-upgrade/new_contract",
+    "contracts/batch-transfer",
+    "contracts/budget-recommendations",
 ]
 
 [workspace.package]

@@ -26,10 +26,12 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
 
 pub use crate::analytics::{
     compute_batch_checksum, compute_batch_metrics, compute_category_metrics,
-    find_high_value_transactions, validate_batch,
+    create_bundle_result, find_high_value_transactions, validate_batch,
+    validate_bundle_transactions, validate_transaction_for_bundle,
 };
 pub use crate::types::{
-    AnalyticsEvents, BatchMetrics, CategoryMetrics, DataKey, Transaction, MAX_BATCH_SIZE,
+    AnalyticsEvents, BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, DataKey,
+    Transaction, ValidationResult, MAX_BATCH_SIZE,
 };
 
 /// Error codes for the analytics contract.
@@ -48,6 +50,12 @@ pub enum AnalyticsError {
     BatchTooLarge = 5,
     /// Invalid transaction amount
     InvalidAmount = 6,
+    /// Bundle is empty
+    EmptyBundle = 7,
+    /// Bundle exceeds maximum size
+    BundleTooLarge = 8,
+    /// All transactions in bundle are invalid
+    AllTransactionsInvalid = 9,
 }
 
 impl From<AnalyticsError> for soroban_sdk::Error {
@@ -229,6 +237,132 @@ impl TransactionAnalyticsContract {
         Self::require_admin(&env, &current_admin);
 
         env.storage().instance().set(&DataKey::Admin, &new_admin);
+    }
+
+    /// Bundles multiple StellarSpend transactions into a single transaction group.
+    ///
+    /// This function validates all transactions, emits events for bundled transactions,
+    /// and handles partial failures gracefully by returning validation results for
+    /// each transaction.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `caller` - The address calling this function (must be admin)
+    /// * `bundled_transactions` - Vector of transactions to bundle
+    ///
+    /// # Returns
+    /// * `BundleResult` - Result containing validation results and bundle status
+    ///
+    /// # Events Emitted
+    /// * `bundling_started` - When bundling begins
+    /// * `transaction_validated` - For each transaction validation result
+    /// * `transaction_validation_failed` - For each failed validation
+    /// * `bundle_created` - When bundle is created with results
+    /// * `bundling_completed` - When bundling completes
+    ///
+    /// # Errors
+    /// * `EmptyBundle` - If no transactions provided
+    /// * `BundleTooLarge` - If bundle exceeds maximum size
+    /// * `Unauthorized` - If caller is not admin
+    pub fn bundle_transactions(
+        env: Env,
+        caller: Address,
+        bundled_transactions: Vec<BundledTransaction>,
+    ) -> BundleResult {
+        // Verify authorization
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+
+        // Validate bundle size
+        let tx_count = bundled_transactions.len();
+        if tx_count == 0 {
+            panic_with_error!(&env, AnalyticsError::EmptyBundle);
+        }
+        if tx_count > MAX_BATCH_SIZE as usize {
+            panic_with_error!(&env, AnalyticsError::BundleTooLarge);
+        }
+
+        // Get next bundle ID
+        let bundle_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::LastBundleId)
+            .unwrap_or(0)
+            + 1;
+
+        // Emit bundling started event
+        AnalyticsEvents::bundling_started(&env, bundle_id, tx_count as u32);
+
+        // Validate all transactions (handles partial failures gracefully)
+        let validation_results = validate_bundle_transactions(&env, &bundled_transactions);
+
+        // Emit validation events for each transaction
+        let mut valid_count: u32 = 0;
+        let mut invalid_count: u32 = 0;
+
+        for result in validation_results.iter() {
+            AnalyticsEvents::transaction_validated(&env, bundle_id, &result);
+
+            if result.is_valid {
+                valid_count += 1;
+            } else {
+                invalid_count += 1;
+                AnalyticsEvents::transaction_validation_failed(
+                    &env,
+                    bundle_id,
+                    result.tx_id,
+                    &result.error,
+                );
+            }
+        }
+
+        // Create bundle result
+        let current_ledger = env.ledger().sequence() as u64;
+        let bundle_result = create_bundle_result(
+            &env,
+            bundle_id,
+            &bundled_transactions,
+            &validation_results,
+            current_ledger,
+        );
+
+        // Emit bundle created event
+        AnalyticsEvents::bundle_created(&env, bundle_id, &bundle_result);
+
+        // Store bundle result
+        env.storage()
+            .instance()
+            .set(&DataKey::LastBundleId, &bundle_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::BundleResult(bundle_id), &bundle_result);
+
+        // Emit completion event
+        AnalyticsEvents::bundling_completed(&env, bundle_id, bundle_result.can_bundle);
+
+        bundle_result
+    }
+
+    /// Retrieves stored bundle result for a specific bundle ID.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `bundle_id` - The ID of the bundle to retrieve
+    ///
+    /// # Returns
+    /// * `Option<BundleResult>` - The stored bundle result if found
+    pub fn get_bundle_result(env: Env, bundle_id: u64) -> Option<BundleResult> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::BundleResult(bundle_id))
+    }
+
+    /// Returns the last created bundle ID.
+    pub fn get_last_bundle_id(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::LastBundleId)
+            .unwrap_or(0)
     }
 
     // Internal helper to verify admin

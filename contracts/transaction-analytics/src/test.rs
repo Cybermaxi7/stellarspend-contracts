@@ -2,7 +2,10 @@
 
 #![cfg(test)]
 
-use crate::{Transaction, TransactionAnalyticsContract, TransactionAnalyticsContractClient};
+use crate::{
+    BundledTransaction, BundleResult, Transaction, TransactionAnalyticsContract,
+    TransactionAnalyticsContractClient, ValidationResult,
+};
 use soroban_sdk::{
     testutils::{Address as _, Events},
     Address, Env, Symbol, Vec,
@@ -398,4 +401,294 @@ fn test_same_category_aggregation() {
 
     assert_eq!(metrics.tx_count, 3);
     assert_eq!(metrics.total_volume, 600);
+}
+
+// ============================================================================
+// Transaction Bundling Tests
+// ============================================================================
+
+/// Helper to create a bundled transaction.
+fn create_bundled_transaction(
+    env: &Env,
+    tx_id: u64,
+    amount: i128,
+    category: &str,
+) -> BundledTransaction {
+    BundledTransaction {
+        transaction: create_transaction(env, tx_id, amount, category),
+        memo: None,
+    }
+}
+
+/// Helper to create a bundled transaction with memo.
+fn create_bundled_transaction_with_memo(
+    env: &Env,
+    tx_id: u64,
+    amount: i128,
+    category: &str,
+    memo: &str,
+) -> BundledTransaction {
+    BundledTransaction {
+        transaction: create_transaction(env, tx_id, amount, category),
+        memo: Some(Symbol::new(env, memo)),
+    }
+}
+
+/// Helper to create a bundled transaction with specific addresses.
+fn create_bundled_transaction_with_addresses(
+    env: &Env,
+    tx_id: u64,
+    from: Address,
+    to: Address,
+    amount: i128,
+    category: &str,
+) -> BundledTransaction {
+    BundledTransaction {
+        transaction: create_transaction_with_addresses(env, tx_id, from, to, amount, category),
+        memo: None,
+    }
+}
+
+#[test]
+fn test_bundle_transactions_success() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 1000, "transfer"));
+    bundled_txs.push_back(create_bundled_transaction(&env, 2, 2000, "budget"));
+    bundled_txs.push_back(create_bundled_transaction(&env, 3, 3000, "savings"));
+
+    let result = client.bundle_transactions(&admin, &bundled_txs);
+
+    assert_eq!(result.bundle_id, 1);
+    assert_eq!(result.total_count, 3);
+    assert_eq!(result.valid_count, 3);
+    assert_eq!(result.invalid_count, 0);
+    assert_eq!(result.can_bundle, true);
+    assert_eq!(result.total_volume, 6000);
+    assert_eq!(result.validation_results.len(), 3);
+
+    // All transactions should be valid
+    for result_item in result.validation_results.iter() {
+        assert_eq!(result_item.is_valid, true);
+    }
+}
+
+#[test]
+fn test_bundle_transactions_with_partial_failures() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 1000, "transfer"));
+    // Create a transaction with same from/to address (should fail validation)
+    let sender = Address::generate(&env);
+    bundled_txs.push_back(create_bundled_transaction_with_addresses(
+        &env, 2, sender.clone(), sender.clone(), 2000, "budget",
+    ));
+    bundled_txs.push_back(create_bundled_transaction(&env, 3, 3000, "savings"));
+
+    let result = client.bundle_transactions(&admin, &bundled_txs);
+
+    assert_eq!(result.bundle_id, 1);
+    assert_eq!(result.total_count, 3);
+    assert_eq!(result.valid_count, 2);
+    assert_eq!(result.invalid_count, 1);
+    assert_eq!(result.can_bundle, false); // Not all valid
+    assert_eq!(result.total_volume, 4000); // Only valid transactions
+    assert_eq!(result.validation_results.len(), 3);
+
+    // Check validation results
+    let result_1 = result.validation_results.get(0).unwrap();
+    assert_eq!(result_1.tx_id, 1);
+    assert_eq!(result_1.is_valid, true);
+
+    let result_2 = result.validation_results.get(1).unwrap();
+    assert_eq!(result_2.tx_id, 2);
+    assert_eq!(result_2.is_valid, false);
+
+    let result_3 = result.validation_results.get(2).unwrap();
+    assert_eq!(result_3.tx_id, 3);
+    assert_eq!(result_3.is_valid, true);
+}
+
+#[test]
+fn test_bundle_transactions_with_negative_amount() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 1000, "transfer"));
+    // Create a transaction with negative amount (should fail validation)
+    let mut invalid_tx = create_bundled_transaction(&env, 2, -100, "budget");
+    bundled_txs.push_back(invalid_tx);
+    bundled_txs.push_back(create_bundled_transaction(&env, 3, 3000, "savings"));
+
+    let result = client.bundle_transactions(&admin, &bundled_txs);
+
+    assert_eq!(result.valid_count, 2);
+    assert_eq!(result.invalid_count, 1);
+    assert_eq!(result.can_bundle, false);
+
+    // Check that the invalid transaction has the correct error
+    let invalid_result = result.validation_results.get(1).unwrap();
+    assert_eq!(invalid_result.tx_id, 2);
+    assert_eq!(invalid_result.is_valid, false);
+}
+
+#[test]
+fn test_bundle_id_increments() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 1000, "transfer"));
+
+    assert_eq!(client.get_last_bundle_id(), 0);
+
+    client.bundle_transactions(&admin, &bundled_txs);
+    assert_eq!(client.get_last_bundle_id(), 1);
+
+    client.bundle_transactions(&admin, &bundled_txs);
+    assert_eq!(client.get_last_bundle_id(), 2);
+}
+
+#[test]
+fn test_get_bundle_result() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 1000, "transfer"));
+    bundled_txs.push_back(create_bundled_transaction(&env, 2, 2000, "budget"));
+
+    let created_result = client.bundle_transactions(&admin, &bundled_txs);
+    let retrieved_result = client.get_bundle_result(&1).unwrap();
+
+    assert_eq!(retrieved_result.bundle_id, created_result.bundle_id);
+    assert_eq!(retrieved_result.total_count, created_result.total_count);
+    assert_eq!(retrieved_result.valid_count, created_result.valid_count);
+    assert_eq!(retrieved_result.can_bundle, created_result.can_bundle);
+}
+
+#[test]
+fn test_get_nonexistent_bundle_result() {
+    let (_, _, client) = setup_test_env();
+
+    let result = client.get_bundle_result(&999);
+    assert!(result.is_none());
+}
+
+#[test]
+#[should_panic]
+fn test_bundle_empty_transactions() {
+    let (env, admin, client) = setup_test_env();
+
+    let bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    client.bundle_transactions(&admin, &bundled_txs);
+}
+
+#[test]
+#[should_panic]
+fn test_unauthorized_bundle_transactions() {
+    let (env, _, client) = setup_test_env();
+
+    let unauthorized = Address::generate(&env);
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 1000, "transfer"));
+
+    // This should panic due to unauthorized access
+    client.bundle_transactions(&unauthorized, &bundled_txs);
+}
+
+#[test]
+fn test_bundle_events_emitted() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 1000, "transfer"));
+    bundled_txs.push_back(create_bundled_transaction(&env, 2, 2000, "budget"));
+
+    client.bundle_transactions(&admin, &bundled_txs);
+
+    let events = env.events().all();
+
+    // Should have multiple events: bundling_started, transaction_validated (x2),
+    // bundle_created, bundling_completed
+    assert!(events.len() >= 5);
+}
+
+#[test]
+fn test_bundle_large_number_of_transactions() {
+    let (env, admin, client) = setup_test_env();
+
+    // Create a bundle with 50 transactions
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    for i in 0..50 {
+        bundled_txs.push_back(create_bundled_transaction(
+            &env,
+            i,
+            (i as i128 + 1) * 100,
+            "transfer",
+        ));
+    }
+
+    let result = client.bundle_transactions(&admin, &bundled_txs);
+
+    assert_eq!(result.total_count, 50);
+    assert_eq!(result.valid_count, 50);
+    assert_eq!(result.invalid_count, 0);
+    assert_eq!(result.can_bundle, true);
+    // Sum of 100 + 200 + ... + 5000 = 100 * (1 + 2 + ... + 50) = 100 * 1275 = 127500
+    assert_eq!(result.total_volume, 127500);
+}
+
+#[test]
+fn test_bundle_with_memo() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction_with_memo(
+        &env, 1, 1000, "transfer", "payment",
+    ));
+    bundled_txs.push_back(create_bundled_transaction(&env, 2, 2000, "budget"));
+
+    let result = client.bundle_transactions(&admin, &bundled_txs);
+
+    assert_eq!(result.valid_count, 2);
+    assert_eq!(result.can_bundle, true);
+}
+
+#[test]
+fn test_bundle_all_transactions_invalid() {
+    let (env, admin, client) = setup_test_env();
+
+    // Create transactions that will all fail validation
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    let sender = Address::generate(&env);
+    bundled_txs.push_back(create_bundled_transaction_with_addresses(
+        &env, 1, sender.clone(), sender.clone(), 1000, "transfer",
+    ));
+    bundled_txs.push_back(create_bundled_transaction_with_addresses(
+        &env, 2, sender.clone(), sender.clone(), 2000, "budget",
+    ));
+
+    let result = client.bundle_transactions(&admin, &bundled_txs);
+
+    assert_eq!(result.valid_count, 0);
+    assert_eq!(result.invalid_count, 2);
+    assert_eq!(result.can_bundle, false);
+    assert_eq!(result.total_volume, 0);
+}
+
+#[test]
+fn test_bundle_zero_amount_transactions() {
+    let (env, admin, client) = setup_test_env();
+
+    let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
+    bundled_txs.push_back(create_bundled_transaction(&env, 1, 0, "transfer"));
+    bundled_txs.push_back(create_bundled_transaction(&env, 2, 1000, "budget"));
+
+    let result = client.bundle_transactions(&admin, &bundled_txs);
+
+    // Zero amount transactions are allowed
+    assert_eq!(result.valid_count, 2);
+    assert_eq!(result.can_bundle, true);
+    assert_eq!(result.total_volume, 1000);
 }

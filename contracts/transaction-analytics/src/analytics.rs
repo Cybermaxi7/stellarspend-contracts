@@ -8,7 +8,10 @@
 
 use soroban_sdk::{Address, Env, Map, Symbol, Vec};
 
-use crate::types::{BatchMetrics, CategoryMetrics, Transaction, MAX_BATCH_SIZE};
+use crate::types::{
+    BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, Transaction,
+    ValidationResult, MAX_BATCH_SIZE,
+};
 
 /// Computes aggregated metrics for a batch of transactions.
 ///
@@ -174,6 +177,108 @@ pub fn compute_batch_checksum(transactions: &Vec<Transaction>) -> u64 {
     }
 
     checksum
+}
+
+/// Validates a single transaction for bundling.
+///
+/// Returns a ValidationResult indicating whether the transaction is valid
+/// and providing an error message if invalid.
+pub fn validate_transaction_for_bundle(
+    env: &Env,
+    bundled_tx: &BundledTransaction,
+) -> ValidationResult {
+    let tx = &bundled_tx.transaction;
+
+    // Validate transaction amount
+    if tx.amount < 0 {
+        return ValidationResult {
+            tx_id: tx.tx_id,
+            is_valid: false,
+            error: Symbol::new(env, "invalid_amount"),
+        };
+    }
+
+    // Validate addresses (cannot be the same)
+    if tx.from == tx.to {
+        return ValidationResult {
+            tx_id: tx.tx_id,
+            is_valid: false,
+            error: Symbol::new(env, "same_address"),
+        };
+    }
+
+    // Validate amount is not zero (optional - you might want to allow zero)
+    // For now, we'll allow zero amounts
+
+    // Transaction is valid
+    ValidationResult {
+        tx_id: tx.tx_id,
+        is_valid: true,
+        error: Symbol::new(env, ""),
+    }
+}
+
+/// Validates all transactions in a bundle and returns validation results.
+///
+/// This function handles partial failures gracefully by validating each
+/// transaction independently and returning results for all transactions.
+pub fn validate_bundle_transactions(
+    env: &Env,
+    bundled_transactions: &Vec<BundledTransaction>,
+) -> Vec<ValidationResult> {
+    let mut results: Vec<ValidationResult> = Vec::new(env);
+
+    for bundled_tx in bundled_transactions.iter() {
+        let result = validate_transaction_for_bundle(env, &bundled_tx);
+        results.push_back(result);
+    }
+
+    results
+}
+
+/// Creates a bundle result from validation results and transactions.
+///
+/// Computes bundle metrics and determines if the bundle can be created.
+pub fn create_bundle_result(
+    env: &Env,
+    bundle_id: u64,
+    bundled_transactions: &Vec<BundledTransaction>,
+    validation_results: &Vec<ValidationResult>,
+    created_at: u64,
+) -> BundleResult {
+    let total_count = bundled_transactions.len() as u32;
+    let mut valid_count: u32 = 0;
+    let mut invalid_count: u32 = 0;
+    let mut total_volume: i128 = 0;
+
+    // Count valid/invalid and compute total volume of valid transactions
+    let mut index: u32 = 0;
+    for result in validation_results.iter() {
+        if result.is_valid {
+            valid_count += 1;
+            if let Some(bundled_tx) = bundled_transactions.get(index) {
+                total_volume = total_volume
+                    .checked_add(bundled_tx.transaction.amount)
+                    .unwrap_or(i128::MAX);
+            }
+        } else {
+            invalid_count += 1;
+        }
+        index += 1;
+    }
+
+    let can_bundle = valid_count > 0 && invalid_count == 0;
+
+    BundleResult {
+        bundle_id,
+        total_count,
+        valid_count,
+        invalid_count,
+        validation_results: validation_results.clone(),
+        can_bundle,
+        total_volume,
+        created_at,
+    }
 }
 
 #[cfg(test)]
