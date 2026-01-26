@@ -1,6 +1,6 @@
 //! Validation utilities for budget recommendations.
 
-use soroban_sdk::{Address, Env, Symbol};
+use soroban_sdk::{Env, Vec};
 
 use crate::types::UserProfile;
 
@@ -17,16 +17,12 @@ pub enum ValidationError {
     InvalidSavings,
     /// Invalid risk tolerance
     InvalidRiskTolerance,
-    /// Income less than expenses
-    ExpensesExceedIncome,
-    /// Invalid address
-    InvalidAddress,
 }
 
 /// Validates a user profile for budget recommendations.
 ///
 /// Returns Ok(()) if valid, or a ValidationError if invalid.
-pub fn validate_user_profile(env: &Env, profile: &UserProfile) -> Result<(), ValidationError> {
+pub fn validate_user_profile(_env: &Env, profile: &UserProfile) -> Result<(), ValidationError> {
     // Validate user ID
     if profile.user_id == 0 {
         return Err(ValidationError::InvalidUserId);
@@ -35,7 +31,7 @@ pub fn validate_user_profile(env: &Env, profile: &UserProfile) -> Result<(), Val
     // Validate address
     // Note: Address validation is basic - in production you might want more checks
     // For now, we just ensure it's not a zero address (if applicable)
-    
+
     // Validate income (must be positive)
     if profile.monthly_income <= 0 {
         return Err(ValidationError::InvalidIncome);
@@ -72,7 +68,7 @@ pub fn validate_batch(profiles: &Vec<UserProfile>) -> Result<(), &'static str> {
         return Err("Batch cannot be empty");
     }
 
-    if count > crate::types::MAX_BATCH_SIZE as usize {
+    if count > crate::types::MAX_BATCH_SIZE {
         return Err("Batch exceeds maximum size");
     }
 

@@ -74,7 +74,9 @@ impl BudgetRecommendationsContract {
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::LastBatchId, &0u64);
-        env.storage().instance().set(&DataKey::TotalUsersProcessed, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalUsersProcessed, &0u64);
         env.storage()
             .instance()
             .set(&DataKey::TotalRecommendationsGenerated, &0u64);
@@ -114,7 +116,7 @@ impl BudgetRecommendationsContract {
         if user_count == 0 {
             panic_with_error!(&env, BudgetRecommendationError::EmptyBatch);
         }
-        if user_count > MAX_BATCH_SIZE as usize {
+        if user_count > MAX_BATCH_SIZE {
             panic_with_error!(&env, BudgetRecommendationError::BatchTooLarge);
         }
 
@@ -138,7 +140,8 @@ impl BudgetRecommendationsContract {
         let current_ledger = env.ledger().sequence() as u64;
 
         // Generate batch recommendations (single pass over data)
-        let (results, metrics) = generate_batch_recommendations(&env, &user_profiles, current_ledger);
+        let (results, metrics) =
+            generate_batch_recommendations(&env, &user_profiles, current_ledger);
 
         // Emit events for each recommendation
         for result in results.iter() {
@@ -162,7 +165,7 @@ impl BudgetRecommendationsContract {
                     }
                 }
                 RecommendationResult::Failure(user_id, error) => {
-                    RecommendationEvents::recommendation_failed(&env, batch_id, *user_id, error);
+                    RecommendationEvents::recommendation_failed(&env, batch_id, user_id, &error);
                 }
             }
         }
@@ -179,10 +182,13 @@ impl BudgetRecommendationsContract {
             .get(&DataKey::TotalRecommendationsGenerated)
             .unwrap_or(0);
 
-        env.storage().instance().set(&DataKey::LastBatchId, &batch_id);
         env.storage()
             .instance()
-            .set(&DataKey::TotalUsersProcessed, &(total_processed + user_count as u64));
+            .set(&DataKey::LastBatchId, &batch_id);
+        env.storage().instance().set(
+            &DataKey::TotalUsersProcessed,
+            &(total_processed + user_count as u64),
+        );
         env.storage().instance().set(
             &DataKey::TotalRecommendationsGenerated,
             &(total_recommendations + metrics.successful_recommendations as u64),
@@ -215,10 +221,7 @@ impl BudgetRecommendationsContract {
     ///
     /// # Returns
     /// * `Option<Vec<RecommendationResult>>` - The stored recommendations if found
-    pub fn get_batch_recommendations(
-        env: Env,
-        batch_id: u64,
-    ) -> Option<Vec<RecommendationResult>> {
+    pub fn get_batch_recommendations(env: Env, batch_id: u64) -> Option<Vec<RecommendationResult>> {
         env.storage()
             .persistent()
             .get(&DataKey::BatchRecommendations(batch_id))
@@ -237,8 +240,11 @@ impl BudgetRecommendationsContract {
     pub fn simulate_recommendation(
         env: Env,
         user_profile: UserProfile,
-    ) -> Result<BudgetRecommendation, Symbol> {
-        generate_recommendation(&env, &user_profile)
+    ) -> Option<BudgetRecommendation> {
+        match generate_recommendation(&env, &user_profile) {
+            Ok(rec) => Some(rec),
+            Err(_) => None,
+        }
     }
 
     /// Returns the admin address.
@@ -274,7 +280,7 @@ impl BudgetRecommendationsContract {
     }
 
     /// Returns the total number of recommendations generated.
-    pub fn get_total_recommendations_generated(env: Env) -> u64 {
+    pub fn get_total_recommendations(env: Env) -> u64 {
         env.storage()
             .instance()
             .get(&DataKey::TotalRecommendationsGenerated)

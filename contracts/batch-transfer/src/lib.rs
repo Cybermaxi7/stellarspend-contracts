@@ -4,9 +4,7 @@
 mod types;
 mod validation;
 
-use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, Vec};
 
 pub use crate::types::{
     BatchTransferResult, DataKey, TransferEvents, TransferRequest, TransferResult, MAX_BATCH_SIZE,
@@ -50,7 +48,9 @@ impl BatchTransferContract {
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::TotalBatches, &0u64);
-        env.storage().instance().set(&DataKey::TotalTransfersProcessed, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalTransfersProcessed, &0u64);
         env.storage()
             .instance()
             .set(&DataKey::TotalVolumeTransferred, &0i128);
@@ -98,11 +98,11 @@ impl BatchTransferContract {
 
         // Get initial balance
         let mut available_balance = token_client.balance(&caller);
-        
+
         // Calculate total needed for all valid transfers and validate upfront
         let mut total_needed: i128 = 0;
         let mut validated_requests: Vec<(TransferRequest, bool, u32)> = Vec::new(&env);
-        
+
         // First pass: Validate all requests and calculate total needed
         for request in transfers.iter() {
             let mut is_valid = true;
@@ -184,13 +184,8 @@ impl BatchTransferContract {
             total_transferred = total_transferred
                 .checked_add(request.amount)
                 .unwrap_or(total_transferred);
-            
-            TransferEvents::transfer_success(
-                &env,
-                batch_id,
-                &request.recipient,
-                request.amount,
-            );
+
+            TransferEvents::transfer_success(&env, batch_id, &request.recipient, request.amount);
         }
 
         // Update storage (batched at the end for efficiency)
@@ -213,12 +208,16 @@ impl BatchTransferContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalBatches, &(total_batches + 1));
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalTransfersProcessed, &(total_processed + request_count as u64));
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalVolumeTransferred, &total_transferred.checked_add(total_volume).unwrap_or(i128::MAX));
+        env.storage().instance().set(
+            &DataKey::TotalTransfersProcessed,
+            &(total_processed + request_count as u64),
+        );
+        env.storage().instance().set(
+            &DataKey::TotalVolumeTransferred,
+            &total_transferred
+                .checked_add(total_volume)
+                .unwrap_or(i128::MAX),
+        );
 
         // Emit batch completed event
         TransferEvents::batch_completed(

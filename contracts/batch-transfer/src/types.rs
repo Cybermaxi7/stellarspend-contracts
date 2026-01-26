@@ -44,7 +44,11 @@ impl TransferEvents {
     }
 
     pub fn transfer_success(env: &Env, batch_id: u64, recipient: &Address, amount: i128) {
-        let topics = (symbol_short!("transfer"), symbol_short!("success"), batch_id);
+        let topics = (
+            symbol_short!("transfer"),
+            symbol_short!("success"),
+            batch_id,
+        );
         env.events().publish(topics, (recipient.clone(), amount));
     }
 
@@ -55,8 +59,13 @@ impl TransferEvents {
         requested_amount: i128,
         error_code: u32,
     ) {
-        let topics = (symbol_short!("transfer"), symbol_short!("failure"), batch_id);
-        env.events().publish(topics, (recipient.clone(), requested_amount, error_code));
+        let topics = (
+            symbol_short!("transfer"),
+            symbol_short!("failure"),
+            batch_id,
+        );
+        env.events()
+            .publish(topics, (recipient.clone(), requested_amount, error_code));
     }
 
     pub fn batch_completed(
@@ -67,6 +76,7 @@ impl TransferEvents {
         total_transferred: i128,
     ) {
         let topics = (symbol_short!("batch"), symbol_short!("completed"), batch_id);
-        env.events().publish(topics, (successful, failed, total_transferred));
+        env.events()
+            .publish(topics, (successful, failed, total_transferred));
     }
 }

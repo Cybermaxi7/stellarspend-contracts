@@ -11,7 +11,6 @@ use soroban_sdk::{Env, Symbol, Vec};
 
 use crate::types::{
     BatchRecommendationMetrics, BudgetRecommendation, RecommendationResult, UserProfile,
-    MAX_BATCH_SIZE,
 };
 
 /// Generates a budget recommendation for a single user.
@@ -28,7 +27,8 @@ pub fn generate_recommendation(
     profile: &UserProfile,
 ) -> Result<BudgetRecommendation, Symbol> {
     // Calculate disposable income
-    let disposable_income = profile.monthly_income
+    let disposable_income = profile
+        .monthly_income
         .checked_sub(profile.monthly_expenses)
         .unwrap_or(0);
 
@@ -62,13 +62,12 @@ pub fn generate_recommendation(
         0
     };
 
-    let recommended_budget = profile.monthly_expenses
-        + (disposable_income - recommended_savings);
+    let recommended_budget = profile.monthly_expenses + (disposable_income - recommended_savings);
 
     // Calculate recommended spending limit (budget + small buffer)
     let buffer_percentage = 5; // 5% buffer
-    let recommended_spending_limit = recommended_budget
-        + (recommended_budget * buffer_percentage as i128) / 100;
+    let recommended_spending_limit =
+        recommended_budget + (recommended_budget * buffer_percentage as i128) / 100;
 
     // Calculate emergency fund target (3-6 months of expenses based on risk tolerance)
     let emergency_fund_months = match profile.risk_tolerance {
@@ -82,7 +81,7 @@ pub fn generate_recommendation(
     let emergency_fund_target = profile.monthly_expenses * emergency_fund_months as i128;
 
     // Calculate confidence score based on data quality
-    let mut confidence_score = 80u8; // Base confidence
+    let mut confidence_score = 80u32; // Base confidence
 
     // Increase confidence if user has positive disposable income
     if disposable_income > 0 {
@@ -167,7 +166,7 @@ pub fn generate_batch_recommendations(
 
     // Calculate average confidence score
     let avg_confidence_score = if successful_count > 0 {
-        (total_confidence / successful_count as u64) as u8
+        (total_confidence / successful_count as u64) as u32
     } else {
         0
     };
@@ -212,7 +211,7 @@ mod tests {
         assert_eq!(recommendation.user_id, 1);
         assert!(recommendation.recommended_budget > 0);
         assert!(recommendation.recommended_savings > 0);
-        assert!(recommendation.confidence_score >= 80);
+        assert!(recommendation.confidence_score >= 80u32);
     }
 
     #[test]

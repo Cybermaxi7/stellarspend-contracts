@@ -3,8 +3,13 @@
 #![cfg(test)]
 
 use crate::{
+<<<<<<< HEAD
     BundledTransaction, Transaction, TransactionAnalyticsContract,
     TransactionAnalyticsContractClient, TransactionStatus, TransactionStatusUpdate,
+=======
+    BundleResult, BundledTransaction, Transaction, TransactionAnalyticsContract,
+    TransactionAnalyticsContractClient, ValidationResult,
+>>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 };
 use soroban_sdk::{
     testutils::{Address as _, Events},
@@ -26,12 +31,7 @@ fn setup_test_env() -> (Env, Address, TransactionAnalyticsContractClient<'static
 }
 
 /// Helper to create a test transaction.
-fn create_transaction(
-    env: &Env,
-    tx_id: u64,
-    amount: i128,
-    category: &str,
-) -> Transaction {
+fn create_transaction(env: &Env, tx_id: u64, amount: i128, category: &str) -> Transaction {
     Transaction {
         tx_id,
         from: Address::generate(env),
@@ -126,6 +126,13 @@ fn test_process_multiple_transactions_batch() {
     assert_eq!(metrics.max_amount, 400);
     assert_eq!(metrics.unique_senders, 4);
     assert_eq!(metrics.unique_recipients, 4);
+<<<<<<< HEAD
+=======
+
+    // Fees: 0.1 + 0.2 + 0.3 + 0.4 = 1.0 (integers: 0 + 0 + 0 + 0 = 0)
+    // Wait, let's check the logic: 100/1000 = 0.
+    // We should probably test with larger numbers to ensure fees > 0
+>>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
     // Fees: 100/1000=0, 200/1000=0, 300/1000=0, 400/1000=0. Total = 0.
     assert_eq!(metrics.total_fees, 0);
 }
@@ -140,13 +147,28 @@ fn test_process_batch_with_shared_addresses() {
 
     let mut transactions: Vec<Transaction> = Vec::new(&env);
     transactions.push_back(create_transaction_with_addresses(
-        &env, 1, sender1.clone(), recipient.clone(), 100, "transfer",
+        &env,
+        1,
+        sender1.clone(),
+        recipient.clone(),
+        100,
+        "transfer",
     ));
     transactions.push_back(create_transaction_with_addresses(
-        &env, 2, sender1.clone(), recipient.clone(), 200, "transfer",
+        &env,
+        2,
+        sender1.clone(),
+        recipient.clone(),
+        200,
+        "transfer",
     ));
     transactions.push_back(create_transaction_with_addresses(
-        &env, 3, sender2.clone(), recipient.clone(), 300, "transfer",
+        &env,
+        3,
+        sender2.clone(),
+        recipient.clone(),
+        300,
+        "transfer",
     ));
 
     let metrics = client.process_batch(&admin, &transactions, &None);
@@ -324,7 +346,12 @@ fn test_large_batch_processing() {
     // Create a batch with 50 transactions
     let mut transactions: Vec<Transaction> = Vec::new(&env);
     for i in 0..50 {
-        transactions.push_back(create_transaction(&env, i, (i as i128 + 1) * 100, "transfer"));
+        transactions.push_back(create_transaction(
+            &env,
+            i,
+            (i as i128 + 1) * 100,
+            "transfer",
+        ));
     }
 
     let metrics = client.process_batch(&admin, &transactions, &None);
@@ -512,15 +539,20 @@ fn test_batch_audit_log_success() {
     client.batch_audit_log(&admin, &logs);
 
     assert_eq!(client.get_total_audit_logs(), 2);
-    
+
     let log1 = client.get_audit_log(&1).unwrap();
     assert_eq!(log1.actor, actor);
     assert_eq!(log1.operation, Symbol::new(&env, "login"));
-    
+
     let log2 = client.get_audit_log(&2).unwrap();
     assert_eq!(log2.actor, actor);
     assert_eq!(log2.operation, Symbol::new(&env, "update_profile"));
 }
+<<<<<<< HEAD
+=======
+
+// ============================================================================
+>>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 // Transaction Bundling Tests
 // ============================================================================
 
@@ -600,7 +632,12 @@ fn test_bundle_transactions_with_partial_failures() {
     // Create a transaction with same from/to address (should fail validation)
     let sender = Address::generate(&env);
     bundled_txs.push_back(create_bundled_transaction_with_addresses(
-        &env, 2, sender.clone(), sender.clone(), 2000, "budget",
+        &env,
+        2,
+        sender.clone(),
+        sender.clone(),
+        2000,
+        "budget",
     ));
     bundled_txs.push_back(create_bundled_transaction(&env, 3, 3000, "savings"));
 
@@ -835,10 +872,20 @@ fn test_bundle_all_transactions_invalid() {
     let mut bundled_txs: Vec<BundledTransaction> = Vec::new(&env);
     let sender = Address::generate(&env);
     bundled_txs.push_back(create_bundled_transaction_with_addresses(
-        &env, 1, sender.clone(), sender.clone(), 1000, "transfer",
+        &env,
+        1,
+        sender.clone(),
+        sender.clone(),
+        1000,
+        "transfer",
     ));
     bundled_txs.push_back(create_bundled_transaction_with_addresses(
-        &env, 2, sender.clone(), sender.clone(), 2000, "budget",
+        &env,
+        2,
+        sender.clone(),
+        sender.clone(),
+        2000,
+        "budget",
     ));
 
     let result = client.bundle_transactions(&admin, &bundled_txs);

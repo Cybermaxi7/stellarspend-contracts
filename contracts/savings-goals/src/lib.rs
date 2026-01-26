@@ -26,8 +26,8 @@ mod validation;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
 
 pub use crate::types::{
-    BatchGoalMetrics, BatchGoalResult, DataKey, ErrorCode, GoalEvents, GoalResult,
-    SavingsGoal, SavingsGoalRequest, MAX_BATCH_SIZE,
+    BatchGoalMetrics, BatchGoalResult, DataKey, ErrorCode, GoalEvents, GoalResult, SavingsGoal,
+    SavingsGoalRequest, MAX_BATCH_SIZE,
 };
 use crate::validation::validate_goal_request;
 
@@ -71,7 +71,9 @@ impl SavingsGoalsContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::LastBatchId, &0u64);
         env.storage().instance().set(&DataKey::LastGoalId, &0u64);
-        env.storage().instance().set(&DataKey::TotalGoalsCreated, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalGoalsCreated, &0u64);
         env.storage()
             .instance()
             .set(&DataKey::TotalBatchesProcessed, &0u64);
@@ -252,9 +254,10 @@ impl SavingsGoalsContract {
         env.storage()
             .instance()
             .set(&DataKey::LastGoalId, &goal_id_counter);
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalGoalsCreated, &(total_goals + successful_count as u64));
+        env.storage().instance().set(
+            &DataKey::TotalGoalsCreated,
+            &(total_goals + successful_count as u64),
+        );
         env.storage()
             .instance()
             .set(&DataKey::TotalBatchesProcessed, &(total_batches + 1));

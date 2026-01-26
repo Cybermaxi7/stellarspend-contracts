@@ -124,7 +124,7 @@ fn test_generate_batch_recommendations_different_risk_tolerances() {
     let result = client.generate_batch_recommendations(&admin, &profiles);
 
     assert_eq!(result.successful, 3);
-    
+
     // Check that recommendations have different types based on risk tolerance
     let rec1 = match result.results.get(0).unwrap() {
         RecommendationResult::Success(rec) => rec,

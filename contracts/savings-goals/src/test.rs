@@ -3,9 +3,7 @@
 #![cfg(test)]
 
 use crate::{SavingsGoalsContract, SavingsGoalsContractClient};
-use soroban_sdk::{
-    symbol_short, testutils::Address as _, Address, Env, Symbol, Vec,
-};
+use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env, Symbol, Vec};
 
 use crate::types::{ErrorCode, GoalResult, SavingsGoalRequest};
 
@@ -24,7 +22,12 @@ fn setup_test_contract() -> (Env, Address, SavingsGoalsContractClient<'static>) 
 }
 
 /// Helper function to create a valid savings goal request.
-fn create_valid_request(env: &Env, user: &Address, goal_name: &str, amount: i128) -> SavingsGoalRequest {
+fn create_valid_request(
+    env: &Env,
+    user: &Address,
+    goal_name: &str,
+    amount: i128,
+) -> SavingsGoalRequest {
     let current_ledger = env.ledger().sequence() as u64;
     SavingsGoalRequest {
         user: user.clone(),
@@ -138,7 +141,7 @@ fn test_batch_set_savings_goals_with_invalid_requests() {
 
     // Verify the first succeeded and second failed
     match &result.results.get(0).unwrap() {
-        GoalResult::Success(_) => {},
+        GoalResult::Success(_) => {}
         GoalResult::Failure(_, _) => panic!("Expected first request to succeed"),
     }
 
@@ -313,7 +316,12 @@ fn test_high_value_goal_event() {
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
     // Create high-value goal (>= 100,000 XLM)
-    requests.push_back(create_valid_request(&env, &user, "mansion", 1_000_000_000_000));
+    requests.push_back(create_valid_request(
+        &env,
+        &user,
+        "mansion",
+        1_000_000_000_000,
+    ));
 
     let result = client.batch_set_savings_goals(&admin, &requests);
 

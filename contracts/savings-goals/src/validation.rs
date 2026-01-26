@@ -9,10 +9,7 @@ use crate::types::{ErrorCode, SavingsGoalRequest, MAX_GOAL_AMOUNT, MIN_GOAL_AMOU
 /// # Returns
 /// * `Ok(())` if valid
 /// * `Err(error_code)` if invalid
-pub fn validate_goal_request(
-    env: &Env,
-    request: &SavingsGoalRequest,
-) -> Result<(), u32> {
+pub fn validate_goal_request(env: &Env, request: &SavingsGoalRequest) -> Result<(), u32> {
     // Validate user address - ensure it's not empty/invalid
     // Note: Soroban SDK doesn't provide a direct way to validate Address format,
     // but we can check basic properties
@@ -132,7 +129,7 @@ pub fn validate_batch(requests: &soroban_sdk::Vec<SavingsGoalRequest>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, symbol_short, Env};
+    use soroban_sdk::{symbol_short, testutils::Address as _, Env};
 
     fn create_valid_request(env: &Env) -> SavingsGoalRequest {
         SavingsGoalRequest {

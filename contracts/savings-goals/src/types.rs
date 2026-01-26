@@ -142,8 +142,10 @@ impl GoalEvents {
     /// Event emitted when a goal is successfully created.
     pub fn goal_created(env: &Env, batch_id: u64, goal: &SavingsGoal) {
         let topics = (symbol_short!("goal"), symbol_short!("created"), batch_id);
-        env.events()
-            .publish(topics, (goal.goal_id, goal.user.clone(), goal.target_amount));
+        env.events().publish(
+            topics,
+            (goal.goal_id, goal.user.clone(), goal.target_amount),
+        );
     }
 
     /// Event emitted when goal creation fails.

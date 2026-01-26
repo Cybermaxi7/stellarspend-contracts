@@ -221,7 +221,11 @@ impl AnalyticsEvents {
 
     /// Event emitted for each category in a batch.
     pub fn category_analytics(env: &Env, batch_id: u64, category_metrics: &CategoryMetrics) {
-        let topics = (symbol_short!("category"), batch_id, &category_metrics.category);
+        let topics = (
+            symbol_short!("category"),
+            batch_id,
+            &category_metrics.category,
+        );
         env.events().publish(topics, category_metrics.clone());
     }
 
@@ -248,6 +252,7 @@ impl AnalyticsEvents {
         let topics = (symbol_short!("audit"), symbol_short!("log"), actor);
         env.events().publish(topics, (operation, status));
     }
+<<<<<<< HEAD
 
     /// Event emitted when a rating is submitted.
     pub fn rating_submitted(
@@ -275,6 +280,8 @@ impl AnalyticsEvents {
         let topics = (symbol_short!("status"), symbol_short!("failed"));
         env.events().publish(topics, tx_id);
     }
+=======
+>>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 
     /// Event emitted when a transaction bundle is created.
     pub fn bundle_created(env: &Env, bundle_id: u64, result: &BundleResult) {
@@ -305,12 +312,7 @@ impl AnalyticsEvents {
     }
 
     /// Event emitted when a transaction fails validation in a bundle.
-    pub fn transaction_validation_failed(
-        env: &Env,
-        bundle_id: u64,
-        tx_id: u64,
-        error: &Symbol,
-    ) {
+    pub fn transaction_validation_failed(env: &Env, bundle_id: u64, tx_id: u64, error: &Symbol) {
         let topics = (symbol_short!("bundle"), symbol_short!("failed"), bundle_id);
         env.events().publish(topics, (tx_id, error.clone()));
     }

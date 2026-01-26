@@ -291,6 +291,17 @@
                     },
                     {
                       "key": {
+                        "symbol": "total_fees"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 15
+                        }
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "total_volume"
                       },
                       "val": {
@@ -699,6 +710,17 @@
                 },
                 {
                   "key": {
+                    "symbol": "total_fees"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 15
+                    }
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "total_volume"
                   },
                   "val": {
@@ -769,6 +791,17 @@
                 },
                 {
                   "key": {
+                    "symbol": "total_fees"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 10
+                    }
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "total_volume"
                   },
                   "val": {
@@ -827,6 +860,17 @@
                   },
                   "val": {
                     "symbol": "transfer"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_fees"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 5
+                    }
                   }
                 },
                 {

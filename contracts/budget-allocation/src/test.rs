@@ -1,0 +1,101 @@
+#![cfg(test)]
+
+use super::*;
+use crate::types::BudgetRequest;
+use soroban_sdk::{
+    testutils::{Address as _, Events},
+    vec, Address, Env,
+};
+
+#[test]
+fn test_batch_allocate_budget() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(BudgetAllocationContract, ());
+    let client = BudgetAllocationContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    let user3 = Address::generate(&env);
+
+    let requests = vec![
+        &env,
+        BudgetRequest {
+            user: user1.clone(),
+            amount: 1000,
+        },
+        BudgetRequest {
+            user: user2.clone(),
+            amount: 2000,
+        },
+        BudgetRequest {
+            user: user3.clone(),
+            amount: -500,
+        }, // Invalid
+    ];
+
+    let result = client.batch_allocate_budget(&admin, &requests);
+
+    assert_eq!(result.successful, 2);
+    assert_eq!(result.failed, 1);
+    assert_eq!(result.total_amount, 3000);
+
+    // Verify user1 budget
+    let budget1 = client.get_budget(&user1).unwrap();
+    assert_eq!(budget1.user, user1);
+    assert_eq!(budget1.amount, 1000);
+
+    // Verify user2 budget
+    let budget2 = client.get_budget(&user2).unwrap();
+    assert_eq!(budget2.user, user2);
+    assert_eq!(budget2.amount, 2000);
+
+    // Verify user3 budget (should be None)
+    let budget3 = client.get_budget(&user3);
+    assert!(budget3.is_none());
+
+    // Check updates
+    // Update user1 amount
+    let requests2 = vec![
+        &env,
+        BudgetRequest {
+            user: user1.clone(),
+            amount: 1500,
+        },
+    ];
+    let result2 = client.batch_allocate_budget(&admin, &requests2);
+    assert_eq!(result2.successful, 1);
+    assert_eq!(result2.total_amount, 1500);
+
+    let budget1_updated = client.get_budget(&user1).unwrap();
+    assert_eq!(budget1_updated.amount, 1500);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_unauthorized_access() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(BudgetAllocationContract, ());
+    let client = BudgetAllocationContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    let not_admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let requests = vec![
+        &env,
+        BudgetRequest {
+            user: user1.clone(),
+            amount: 1000,
+        },
+    ];
+
+    client.batch_allocate_budget(&not_admin, &requests);
+}
