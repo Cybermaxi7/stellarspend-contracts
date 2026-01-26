@@ -5,6 +5,7 @@ members = [
     "contracts/contract-upgrade/old_contract",
     "contracts/contract-upgrade/new_contract",
     "contracts/batch-transfer",
+    "contracts/batch-conversion",
     "contracts/budget-recommendations",
     "contracts/savings-goals",
     "contracts/budget-allocation",
