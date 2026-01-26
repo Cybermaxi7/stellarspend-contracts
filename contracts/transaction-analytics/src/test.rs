@@ -3,13 +3,8 @@
 #![cfg(test)]
 
 use crate::{
-<<<<<<< HEAD
     BundledTransaction, Transaction, TransactionAnalyticsContract,
     TransactionAnalyticsContractClient, TransactionStatus, TransactionStatusUpdate,
-=======
-    BundleResult, BundledTransaction, Transaction, TransactionAnalyticsContract,
-    TransactionAnalyticsContractClient, ValidationResult,
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 };
 use soroban_sdk::{
     testutils::{Address as _, Events},
@@ -126,13 +121,6 @@ fn test_process_multiple_transactions_batch() {
     assert_eq!(metrics.max_amount, 400);
     assert_eq!(metrics.unique_senders, 4);
     assert_eq!(metrics.unique_recipients, 4);
-<<<<<<< HEAD
-=======
-
-    // Fees: 0.1 + 0.2 + 0.3 + 0.4 = 1.0 (integers: 0 + 0 + 0 + 0 = 0)
-    // Wait, let's check the logic: 100/1000 = 0.
-    // We should probably test with larger numbers to ensure fees > 0
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
     // Fees: 100/1000=0, 200/1000=0, 300/1000=0, 400/1000=0. Total = 0.
     assert_eq!(metrics.total_fees, 0);
 }
@@ -548,11 +536,6 @@ fn test_batch_audit_log_success() {
     assert_eq!(log2.actor, actor);
     assert_eq!(log2.operation, Symbol::new(&env, "update_profile"));
 }
-<<<<<<< HEAD
-=======
-
-// ============================================================================
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 // Transaction Bundling Tests
 // ============================================================================
 

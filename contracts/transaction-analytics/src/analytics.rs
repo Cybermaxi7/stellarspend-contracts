@@ -8,14 +8,10 @@
 
 use soroban_sdk::{Address, Env, Map, Symbol, Vec};
 
+use crate::AuditLog;
 use crate::types::{
-<<<<<<< HEAD
-    AuditLog, BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, Transaction,
+    BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, Transaction,
     ValidationResult, MAX_BATCH_SIZE,
-=======
-    BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, Transaction, ValidationResult,
-    MAX_BATCH_SIZE,
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 };
 
 /// Calculates the processing fee for a transaction amount.

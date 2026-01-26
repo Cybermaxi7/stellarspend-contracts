@@ -26,17 +26,8 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
 
 pub use crate::analytics::{
     compute_batch_checksum, compute_batch_metrics, compute_category_metrics,
-<<<<<<< HEAD
     create_bundle_result, find_high_value_transactions, validate_audit_logs, validate_batch,
     validate_bundle_transactions, validate_transaction_for_bundle,
-=======
-    find_high_value_transactions, validate_audit_logs, validate_batch,
-};
-pub use crate::types::{
-    create_bundle_result, find_high_value_transactions, validate_batch,
-    validate_bundle_transactions, validate_transaction_for_bundle, AnalyticsEvents, AuditLog,
-    BatchMetrics, CategoryMetrics, DataKey, Transaction, MAX_BATCH_SIZE,
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 };
 pub use crate::types::{
     AnalyticsEvents, AuditLog, BatchMetrics, BatchStatusUpdateResult, BundleResult,
@@ -302,7 +293,6 @@ impl TransactionAnalyticsContract {
         compute_batch_metrics(&env, &transactions, current_ledger)
     }
 
-<<<<<<< HEAD
     pub fn update_transaction_statuses(
         env: Env,
         caller: Address,
@@ -375,9 +365,6 @@ impl TransactionAnalyticsContract {
         user: Address,
         ratings: Vec<RatingInput>,
     ) -> Vec<RatingResult> {
-=======
-    pub fn submit_ratings(env: Env, user: Address, ratings: Vec<RatingInput>) -> Vec<RatingResult> {
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
         user.require_auth();
 
         let count = ratings.len();
@@ -514,10 +501,6 @@ impl TransactionAnalyticsContract {
                 _valid_count += 1;
             } else {
                 _invalid_count += 1;
-<<<<<<< HEAD
-=======
-            }
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
                 AnalyticsEvents::transaction_validation_failed(
                     &env,
                     bundle_id,

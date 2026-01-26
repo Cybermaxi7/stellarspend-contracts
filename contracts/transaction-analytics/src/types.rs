@@ -252,7 +252,6 @@ impl AnalyticsEvents {
         let topics = (symbol_short!("audit"), symbol_short!("log"), actor);
         env.events().publish(topics, (operation, status));
     }
-<<<<<<< HEAD
 
     /// Event emitted when a rating is submitted.
     pub fn rating_submitted(
@@ -280,8 +279,6 @@ impl AnalyticsEvents {
         let topics = (symbol_short!("status"), symbol_short!("failed"));
         env.events().publish(topics, tx_id);
     }
-=======
->>>>>>> 1aeb0aefeb80e2b6ff1f26c11d2f27d9c54a63da
 
     /// Event emitted when a transaction bundle is created.
     pub fn bundle_created(env: &Env, bundle_id: u64, result: &BundleResult) {
