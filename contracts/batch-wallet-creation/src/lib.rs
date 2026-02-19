@@ -9,7 +9,8 @@ use soroban_sdk::{
 };
 
 pub use crate::types::{
-    BatchCreateResult, DataKey, Wallet, WalletCreateRequest, WalletCreateResult, WalletEvents, MAX_BATCH_SIZE,
+    BatchCreateResult, BatchRecoveryResult, DataKey, Wallet, WalletCreateRequest,
+    WalletCreateResult, WalletEvents, WalletRecoveryRequest, WalletRecoveryResult, MAX_BATCH_SIZE,
 };
 use crate::validation::{validate_address, wallet_exists};
 
@@ -178,6 +179,118 @@ impl BatchWalletContract {
         );
 
         BatchCreateResult {
+            total_requests: request_count,
+            successful: successful_count,
+            failed: failed_count,
+            results,
+        }
+    }
+
+    pub fn batch_recover_wallets(
+        env: Env,
+        caller: Address,
+        requests: Vec<WalletRecoveryRequest>,
+    ) -> BatchRecoveryResult {
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+
+        let request_count = requests.len();
+        if request_count == 0 {
+            panic_with_error!(&env, BatchWalletError::EmptyBatch);
+        }
+        if request_count > MAX_BATCH_SIZE {
+            panic_with_error!(&env, BatchWalletError::BatchTooLarge);
+        }
+
+        let batch_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalBatches)
+            .unwrap_or(0)
+            + 1;
+
+        WalletEvents::recovery_started(&env, batch_id, request_count);
+
+        let mut results: Vec<WalletRecoveryResult> = Vec::new(&env);
+        let mut successful_count: u32 = 0;
+        let mut failed_count: u32 = 0;
+
+        for request in requests.iter() {
+            let mut is_valid = true;
+            let mut error_code = 0u32;
+
+            if validate_address(&request.old_owner).is_err()
+                || validate_address(&request.new_owner).is_err()
+            {
+                is_valid = false;
+                error_code = 0;
+            } else if !wallet_exists(&env, &request.old_owner) {
+                is_valid = false;
+                error_code = 1;
+            } else if wallet_exists(&env, &request.new_owner) {
+                is_valid = false;
+                error_code = 2;
+            }
+
+            if !is_valid {
+                results.push_back(WalletRecoveryResult::Failure(
+                    request.old_owner.clone(),
+                    request.new_owner.clone(),
+                    error_code,
+                ));
+                failed_count += 1;
+                WalletEvents::wallet_recovery_failure(
+                    &env,
+                    batch_id,
+                    &request.old_owner,
+                    &request.new_owner,
+                    error_code,
+                );
+                continue;
+            }
+
+            let mut wallet: Wallet = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Wallets(request.old_owner.clone()))
+                .unwrap();
+            wallet.owner = request.new_owner.clone();
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::Wallets(request.new_owner.clone()), &wallet);
+            env.storage()
+                .persistent()
+                .remove(&DataKey::Wallets(request.old_owner.clone()));
+
+            results.push_back(WalletRecoveryResult::Success(
+                request.old_owner.clone(),
+                request.new_owner.clone(),
+            ));
+            successful_count += 1;
+
+            WalletEvents::wallet_recovered(
+                &env,
+                batch_id,
+                &request.old_owner,
+                &request.new_owner,
+                wallet.id,
+            );
+        }
+
+        let total_batches: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalBatches)
+            .unwrap_or(0);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalBatches, &(total_batches + 1));
+
+        WalletEvents::recovery_completed(&env, batch_id, successful_count, failed_count);
+
+        BatchRecoveryResult {
             total_requests: request_count,
             successful: successful_count,
             failed: failed_count,
