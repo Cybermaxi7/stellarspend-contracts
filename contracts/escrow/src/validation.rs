@@ -91,6 +91,27 @@ pub fn validate_reversal(
     Ok(())
 }
 
+/// Validates whether an escrow can be released.
+///
+/// Rules: escrow must exist, be active, and caller must be admin or the depositor.
+pub fn validate_release(escrow: Option<&Escrow>, caller: &Address, admin: &Address) -> Result<(), ValidationError> {
+    let escrow = escrow.ok_or(ValidationError::EscrowNotFound)?;
+
+    match escrow.status {
+        EscrowStatus::Released => return Err(ValidationError::AlreadyReleased),
+        EscrowStatus::Reversed => return Err(ValidationError::AlreadyReversed),
+        EscrowStatus::Active => {}
+    }
+
+    let is_admin = caller == admin;
+    let is_depositor = caller == &escrow.depositor;
+    if !is_admin && !is_depositor {
+        return Err(ValidationError::Unauthorized);
+    }
+
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {
