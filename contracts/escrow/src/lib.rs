@@ -11,9 +11,10 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env,
 
 pub use crate::types::{
     BatchReversalResult, DataKey, Escrow, EscrowEvents, EscrowStatus, ReversalRequest,
-    ReversalResult, MAX_BATCH_SIZE,
+    ReversalResult, MAX_BATCH_SIZE, ReleaseRequest, ReleaseResult, BatchReleaseResult,
 };
 use crate::validation::validate_reversal;
+use crate::validation::validate_release;
 
 /// Error codes for the escrow contract.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -64,6 +65,15 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalAmountReversed, &0i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalReleaseBatches, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalEscrowsReleased, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalAmountReleased, &0i128);
     }
 
     /// Creates a new escrow.
@@ -319,6 +329,168 @@ impl EscrowContract {
         }
     }
 
+    /// Batch releases multiple escrows to their recipients.
+    ///
+    /// Caller must be authenticated. Each request is validated individually:
+    /// admin may release any escrow, depositor may release their own.
+    pub fn batch_release_escrows(
+        env: Env,
+        caller: Address,
+        requests: Vec<ReleaseRequest>,
+    ) -> BatchReleaseResult {
+        // Require auth for caller (admin or depositor(s))
+        caller.require_auth();
+
+        // Validate batch size
+        let request_count = requests.len();
+        if request_count == 0 {
+            panic_with_error!(&env, EscrowError::EmptyBatch);
+        }
+        if request_count > MAX_BATCH_SIZE {
+            panic_with_error!(&env, EscrowError::BatchTooLarge);
+        }
+
+        // Batch id for releases
+        let batch_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalReleaseBatches)
+            .unwrap_or(0)
+            + 1;
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Contract not initialized");
+        let token_client = token::Client::new(&env, &token);
+
+        // Emit batch started event
+        EscrowEvents::batch_release_started(&env, batch_id, request_count);
+
+        // Initialize tracking
+        let mut results: Vec<ReleaseResult> = Vec::new(&env);
+        let mut successful_count: u32 = 0;
+        let mut failed_count: u32 = 0;
+        let mut total_released: i128 = 0;
+
+        // First pass: validate
+        let mut validated_requests: Vec<(ReleaseRequest, Option<Escrow>, bool, u32)> =
+            Vec::new(&env);
+
+        for request in requests.iter() {
+            let escrow_opt: Option<Escrow> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Escrow(request.escrow_id));
+
+            let validation_result = validate_release(escrow_opt.as_ref(), &caller, &admin);
+
+            let (is_valid, error_code) = match validation_result {
+                Ok(()) => (true, 0u32),
+                Err(e) => (false, e.to_error_code()),
+            };
+
+            validated_requests.push_back((request.clone(), escrow_opt, is_valid, error_code));
+        }
+
+        // Second pass: execute releases
+        for (request, escrow_opt, is_valid, error_code) in validated_requests.iter() {
+            if !is_valid {
+                results.push_back(ReleaseResult::Failure(request.escrow_id, *error_code));
+                failed_count += 1;
+                EscrowEvents::release_failure(&env, batch_id, request.escrow_id, *error_code);
+                continue;
+            }
+
+            let mut escrow = escrow_opt.clone().unwrap();
+
+            // Transfer to recipient
+            token_client.transfer(
+                &env.current_contract_address(),
+                &escrow.recipient,
+                &escrow.amount,
+            );
+
+            // Update status
+            escrow.status = EscrowStatus::Released;
+            env.storage()
+                .persistent()
+                .set(&DataKey::Escrow(escrow.escrow_id), &escrow);
+
+            results.push_back(ReleaseResult::Success(
+                escrow.escrow_id,
+                escrow.recipient.clone(),
+                escrow.amount,
+            ));
+            successful_count += 1;
+            total_released = total_released
+                .checked_add(escrow.amount)
+                .unwrap_or(total_released);
+
+            EscrowEvents::release_success(
+                &env,
+                batch_id,
+                escrow.escrow_id,
+                &escrow.recipient,
+                escrow.amount,
+            );
+        }
+
+        // Update storage stats
+        let total_batches: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalReleaseBatches)
+            .unwrap_or(0);
+        let total_escrows_released: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalEscrowsReleased)
+            .unwrap_or(0);
+        let total_amount_released: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAmountReleased)
+            .unwrap_or(0);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalReleaseBatches, &(total_batches + 1));
+        env.storage().instance().set(
+            &DataKey::TotalEscrowsReleased,
+            &(total_escrows_released + successful_count as u64),
+        );
+        env.storage().instance().set(
+            &DataKey::TotalAmountReleased,
+            &total_amount_released
+                .checked_add(total_released)
+                .unwrap_or(i128::MAX),
+        );
+
+        EscrowEvents::batch_release_completed(
+            &env,
+            batch_id,
+            successful_count,
+            failed_count,
+            total_released,
+        );
+
+        BatchReleaseResult {
+            batch_id,
+            total_requests: request_count,
+            successful: successful_count,
+            failed: failed_count,
+            total_released,
+            results,
+        }
+    }
+
     /// Releases an escrow to the recipient.
     ///
     /// Can only be called by admin or depositor.
@@ -417,6 +589,30 @@ impl EscrowContract {
         env.storage()
             .instance()
             .get(&DataKey::TotalAmountReversed)
+            .unwrap_or(0)
+    }
+
+    /// Returns the total number of release batches processed.
+    pub fn get_total_release_batches(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalReleaseBatches)
+            .unwrap_or(0)
+    }
+
+    /// Returns the total number of escrows released.
+    pub fn get_total_escrows_released(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalEscrowsReleased)
+            .unwrap_or(0)
+    }
+
+    /// Returns the total amount released.
+    pub fn get_total_amount_released(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalAmountReleased)
             .unwrap_or(0)
     }
 
