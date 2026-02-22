@@ -5,14 +5,25 @@ mod types;
 mod test;
 
 use crate::types::{DataKey, RecurringPayment};
-use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env};
 
 #[contract]
 pub struct RecurringPaymentContract;
 
 #[contractimpl]
 impl RecurringPaymentContract {
-    /// Creates a new recurring payment.
+    /// Creates a new recurring payment schedule.
+    ///
+    /// # Arguments
+    /// * `sender`     - The address funding the payments (must authorize)
+    /// * `recipient`  - The address that receives each payment
+    /// * `token`      - The token contract address
+    /// * `amount`     - Amount transferred on each execution (must be > 0)
+    /// * `interval`   - Seconds between executions (must be > 0)
+    /// * `start_time` - Ledger timestamp of the first allowed execution
+    ///
+    /// # Returns
+    /// The unique payment ID assigned to this schedule.
     pub fn create_payment(
         env: Env,
         sender: Address,
@@ -31,7 +42,11 @@ impl RecurringPaymentContract {
             panic!("Interval must be positive");
         }
 
-        let mut count: u64 = env.storage().instance().get(&DataKey::PaymentCount).unwrap_or(0);
+        let mut count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PaymentCount)
+            .unwrap_or(0);
         count += 1;
 
         let payment = RecurringPayment {
@@ -44,10 +59,13 @@ impl RecurringPaymentContract {
             active: true,
         };
 
-        env.storage().instance().set(&DataKey::Payment(count), &payment);
-        env.storage().instance().set(&DataKey::PaymentCount, &count);
+        env.storage()
+            .instance()
+            .set(&DataKey::Payment(count), &payment);
+        env.storage()
+            .instance()
+            .set(&DataKey::PaymentCount, &count);
 
-        // Emit creation event
         env.events().publish(
             (symbol_short!("recur"), symbol_short!("created"), count),
             sender,
@@ -56,7 +74,9 @@ impl RecurringPaymentContract {
         count
     }
 
-    /// Executes a recurring payment if the next execution time has passed.
+ 
+    /// # Arguments
+    /// * `payment_id` - The ID returned by `create_payment`
     pub fn execute_payment(env: Env, payment_id: u64) {
         let mut payment: RecurringPayment = env
             .storage()
@@ -73,33 +93,41 @@ impl RecurringPaymentContract {
             panic!("Too early for next execution");
         }
 
-        // Transfer tokens
+        // Transfer tokens from sender to recipient.
         let token_client = token::Client::new(&env, &payment.token);
         token_client.transfer(&payment.sender, &payment.recipient, &payment.amount);
 
-        // Update next execution time
-        payment.next_execution += payment.interval;
-        
-        // If the execution was delayed, we might want to skip or catch up.
-        // For simplicity, we just add the interval to the scheduled time.
-        // If current_time is way past next_execution, catch up.
-        if payment.next_execution <= current_time {
-            // Option 1: Catch up to the next interval in the future
-            // (current_time - scheduled) / interval * interval + scheduled + interval
-            let intervals_passed = (current_time - payment.next_execution) / payment.interval;
-            payment.next_execution += (intervals_passed + 1) * payment.interval;
-        }
+        // Advance next_execution to the next future interval boundary.
+        // If the payment was triggered late (multiple intervals overdue),
+        // we skip forward so the next due date is always in the future.
+        //
+        // Formula: next = scheduled + ceil((current - scheduled) / interval) * interval
+        //
+        // Example: scheduled=1000, interval=3600, current=8700 (2.5 intervals overdue)
+        //   intervals_passed = (8700 - 1000) / 3600 = 2   (integer division)
+        //   next = 1000 + (2 + 1) * 3600 = 11800
+        let intervals_passed =
+            (current_time - payment.next_execution) / payment.interval;
+        payment.next_execution += (intervals_passed + 1) * payment.interval;
 
-        env.storage().instance().set(&DataKey::Payment(payment_id), &payment);
+        env.storage()
+            .instance()
+            .set(&DataKey::Payment(payment_id), &payment);
 
-        // Emit execution event
         env.events().publish(
-            (symbol_short!("recur"), symbol_short!("executed"), payment_id),
+            (
+                symbol_short!("recur"),
+                symbol_short!("executed"),
+                payment_id,
+            ),
             (payment.amount, payment.next_execution),
         );
     }
 
-    /// Cancels a recurring payment.
+    /// Cancels a recurring payment. Only the original sender may cancel.
+    ///
+    /// # Arguments
+    /// * `payment_id` - The ID returned by `create_payment`
     pub fn cancel_payment(env: Env, payment_id: u64) {
         let mut payment: RecurringPayment = env
             .storage()
@@ -109,17 +137,29 @@ impl RecurringPaymentContract {
 
         payment.sender.require_auth();
 
-        payment.active = false;
-        env.storage().instance().set(&DataKey::Payment(payment_id), &payment);
+        if !payment.active {
+            panic!("Payment is already canceled");
+        }
 
-        // Emit cancellation event
+        payment.active = false;
+        env.storage()
+            .instance()
+            .set(&DataKey::Payment(payment_id), &payment);
+
         env.events().publish(
-            (symbol_short!("recur"), symbol_short!("canceled"), payment_id),
+            (
+                symbol_short!("recur"),
+                symbol_short!("canceled"),
+                payment_id,
+            ),
             payment.sender,
         );
     }
 
-    /// Gets payment details.
+    /// Returns the full details of a payment schedule.
+    ///
+    /// # Arguments
+    /// * `payment_id` - The ID returned by `create_payment`
     pub fn get_payment(env: Env, payment_id: u64) -> RecurringPayment {
         env.storage()
             .instance()
