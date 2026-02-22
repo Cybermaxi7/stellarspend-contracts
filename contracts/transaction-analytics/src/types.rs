@@ -243,6 +243,42 @@ pub enum RefundStatus {
     NotFound,
 }
 
+/// Error codes for validation failures
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum ValidationError {
+    /// Invalid address provided
+    InvalidAddress,
+    /// Invalid amount (zero or negative)
+    InvalidAmount,
+    /// Invalid timestamp
+    InvalidTimestamp,
+    /// Invalid category
+    InvalidCategory,
+    /// Invalid transaction ID
+    InvalidTransactionId,
+    /// Invalid reason string
+    InvalidReason,
+    /// Invalid rating score
+    InvalidRating,
+    /// Invalid memo string
+    InvalidMemo,
+    /// Invalid year value
+    InvalidYear,
+    /// Invalid month value
+    InvalidMonth,
+    /// Invalid percentage value
+    InvalidPercentage,
+    /// Addresses are the same when they should be different
+    SameAddress,
+    /// Batch is empty when it shouldn't be
+    EmptyBatch,
+    /// Batch is too large
+    BatchTooLarge,
+    /// Duplicate transaction ID in batch
+    DuplicateTransactionId,
+}
+
 /// Request structure for a single transaction refund.
 #[derive(Clone, Debug)]
 #[contracttype]
