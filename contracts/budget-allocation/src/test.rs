@@ -1,22 +1,58 @@
 #![cfg(test)]
 
 use super::*;
-use crate::types::BudgetRequest;
+use crate::types::{BudgetRequest, CategoryBudgetRequest, BudgetCategory, UserBudgetCategories};
 use soroban_sdk::{
-    testutils::{Address as _, Events},
-    vec, Address, Env,
+    testutils::Address as _, vec, Address, Env, Symbol,
 };
+
+fn create_contract() -> (Env, Address, Address) {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, BudgetAllocationContract);
+    let client = BudgetAllocationContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.initialize(&admin);
+    
+    (env, contract_id, admin)
+}
+
+// Simple client wrapper for testing
+pub struct BudgetAllocationContractClient<'a> {
+    env: &'a Env,
+    contract_id: &'a Address,
+}
+
+impl<'a> BudgetAllocationContractClient<'a> {
+    pub fn new(env: &'a Env, contract_id: &'a Address) -> Self {
+        Self { env, contract_id }
+    }
+
+    pub fn initialize(&self, admin: &Address) {
+        BudgetAllocationContract::initialize(self.env.clone(), admin.clone());
+    }
+
+    pub fn batch_allocate_budget(&self, admin: &Address, requests: &Vec<BudgetRequest>) -> crate::types::BatchBudgetResult {
+        BudgetAllocationContract::batch_allocate_budget(self.env.clone(), admin.clone(), requests.clone())
+    }
+
+    pub fn get_budget(&self, user: &Address) -> Option<crate::types::BudgetRecord> {
+        BudgetAllocationContract::get_budget(self.env.clone(), user.clone())
+    }
+
+    pub fn allocate_budget_by_category(&self, admin: &Address, request: &CategoryBudgetRequest) -> bool {
+        self.env.as_contract(self.contract_id, || {
+            BudgetAllocationContract::allocate_budget_by_category(self.env.clone(), admin.clone(), request.clone())
+        })
+    }
+}
 
 #[test]
 fn test_batch_allocate_budget() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(BudgetAllocationContract, ());
+    let (env, contract_id, admin) = create_contract();
     let client = BudgetAllocationContractClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
 
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
@@ -78,14 +114,8 @@ fn test_batch_allocate_budget() {
 #[test]
 #[should_panic(expected = "Unauthorized")]
 fn test_unauthorized_access() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(BudgetAllocationContract, ());
+    let (env, contract_id, admin) = create_contract();
     let client = BudgetAllocationContractClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
 
     let not_admin = Address::generate(&env);
     let user1 = Address::generate(&env);
@@ -98,4 +128,44 @@ fn test_unauthorized_access() {
     ];
 
     client.batch_allocate_budget(&not_admin, &requests);
+}
+
+#[test]
+fn test_category_budget_allocation_simple() {
+    let (env, contract_id, admin) = create_contract();
+    let client = BudgetAllocationContractClient::new(&env, &contract_id);
+    
+    let user = Address::generate(&env);
+    
+    // Create budget categories
+    let categories = vec![
+        &env,
+        BudgetCategory {
+            name: soroban_sdk::symbol_short!("food"),
+            amount: 500,
+        },
+        BudgetCategory {
+            name: soroban_sdk::symbol_short!("transport"),
+            amount: 200,
+        },
+        BudgetCategory {
+            name: soroban_sdk::symbol_short!("entertain"),
+            amount: 150,
+        },
+    ];
+    
+    let request = CategoryBudgetRequest {
+        user: user.clone(),
+        categories: categories.clone(),
+        total_amount: 850,
+    };
+    
+    // Test successful allocation using client
+    let result = client.allocate_budget_by_category(&admin, &request);
+    assert!(result);
+    
+    // Test legacy budget record is also updated
+    let budget_record = client.get_budget(&user);
+    assert!(budget_record.is_some());
+    assert_eq!(budget_record.unwrap().amount, 850);
 }

@@ -15,8 +15,8 @@
 mod test;
 mod types;
 
-use crate::types::{BatchBudgetResult, BudgetRecord, BudgetRequest, DataKey};
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Vec};
+use crate::types::{BatchBudgetResult, BudgetRecord, BudgetRequest, CategoryBudgetRequest, UserBudgetCategories, DataKey};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Vec, Symbol, Map};
 
 #[contract]
 pub struct BudgetAllocationContract;
@@ -96,6 +96,106 @@ impl BudgetAllocationContract {
             successful,
             failed,
             total_amount,
+        }
+    }
+
+    /// Allocates budgets across multiple categories for a user.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `admin` - The admin address calling the function
+    /// * `request` - Category budget allocation request
+    pub fn allocate_budget_by_category(
+        env: Env,
+        admin: Address,
+        request: CategoryBudgetRequest,
+    ) -> bool {
+        // Verify admin authority
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        // Validate total amount matches sum of categories
+        let mut calculated_total: i128 = 0;
+        for category in request.categories.iter() {
+            if category.amount < 0 {
+                panic!("Negative category amount not allowed");
+            }
+            calculated_total = calculated_total.checked_add(category.amount)
+                .expect("Overflow in category total calculation");
+        }
+
+        if calculated_total != request.total_amount {
+            panic!("Total amount does not match sum of categories");
+        }
+
+        if request.total_amount < 0 {
+            panic!("Negative total amount not allowed");
+        }
+
+        // Create category map
+        let mut category_map = Map::<Symbol, i128>::new(&env);
+        for category in request.categories.iter() {
+            category_map.set(category.name, category.amount);
+        }
+
+        // Store user budget categories
+        let user_categories = UserBudgetCategories {
+            user: request.user.clone(),
+            categories: category_map,
+            total_amount: request.total_amount,
+            last_updated: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::BudgetCategories(request.user.clone()), &user_categories);
+
+        // Also update the legacy budget record for compatibility
+        let budget_record = BudgetRecord {
+            user: request.user.clone(),
+            amount: request.total_amount,
+            last_updated: env.ledger().timestamp(),
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(request.user.clone()), &budget_record);
+
+        // Emit allocation events for each category
+        for category in request.categories.iter() {
+            env.events().publish(
+                (symbol_short!("category"), symbol_short!("allocated")),
+                (request.user.clone(), category.name, category.amount),
+            );
+        }
+
+        // Emit total allocation event
+        env.events().publish(
+            (symbol_short!("budget"), symbol_short!("allocated")),
+            (request.user, request.total_amount, request.categories.len()),
+        );
+
+        true
+    }
+
+    /// Retrieves budget categories for a specific user.
+    pub fn get_budget_categories(env: Env, user: Address) -> Option<UserBudgetCategories> {
+        env.storage().persistent().get(&DataKey::BudgetCategories(user))
+    }
+
+    /// Retrieves the budget for a specific category for a user.
+    pub fn get_category_budget(env: Env, user: Address, category: Symbol) -> Option<i128> {
+        let user_categories: Option<UserBudgetCategories> = env.storage().persistent().get(&DataKey::BudgetCategories(user));
+        if let Some(categories) = user_categories {
+            categories.categories.get(category)
+        } else {
+            None
         }
     }
 

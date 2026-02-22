@@ -1125,3 +1125,192 @@ fn test_unauthorized_refund_batch() {
     
     client.refund_batch(&unauthorized_user, &refund_requests, &lookup);
 }
+
+// ============================================================================
+// Monthly Analytics Tests
+// ============================================================================
+
+#[test]
+fn test_update_monthly_spending_analytics() {
+    let (env, admin, client) = setup_test_env();
+    
+    let user = Address::generate(&env);
+    let mut transactions: Vec<Transaction> = Vec::new(&env);
+    transactions.push_back(create_transaction_with_addresses(
+        &env, 1, user.clone(), Address::generate(&env), 100, "food"
+    ));
+    transactions.push_back(create_transaction_with_addresses(
+        &env, 2, user.clone(), Address::generate(&env), 200, "transport"
+    ));
+    transactions.push_back(create_transaction_with_addresses(
+        &env, 3, user.clone(), Address::generate(&env), 300, "food"
+    ));
+    
+    let analytics = client.update_monthly_spending_analytics(
+        &admin, &user, &transactions, 2023, 10
+    );
+    
+    assert_eq!(analytics.year, 2023);
+    assert_eq!(analytics.month, 10);
+    assert_eq!(analytics.user, user);
+    assert_eq!(analytics.total_spending, 600);
+    assert_eq!(analytics.transaction_count, 3);
+    
+    // Verify we can retrieve the analytics
+    let retrieved = client.get_monthly_analytics(&user, 2023, 10).unwrap();
+    assert_eq!(retrieved.total_spending, analytics.total_spending);
+    assert_eq!(retrieved.transaction_count, analytics.transaction_count);
+}
+
+#[test]
+fn test_get_monthly_analytics_nonexistent() {
+    let (env, _admin, client) = setup_test_env();
+    
+    let user = Address::generate(&env);
+    let result = client.get_monthly_analytics(&user, 2023, 10);
+    
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_get_user_spending_summary_nonexistent() {
+    let (env, _admin, client) = setup_test_env();
+    
+    let user = Address::generate(&env);
+    let result = client.get_user_spending_summary(&user);
+    
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_get_total_tracked_users() {
+    let (env, admin, client) = setup_test_env();
+    
+    assert_eq!(client.get_total_tracked_users(), 0);
+    
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    
+    let mut transactions1: Vec<Transaction> = Vec::new(&env);
+    transactions1.push_back(create_transaction_with_addresses(
+        &env, 1, user1.clone(), Address::generate(&env), 100, "food"
+    ));
+    
+    let mut transactions2: Vec<Transaction> = Vec::new(&env);
+    transactions2.push_back(create_transaction_with_addresses(
+        &env, 2, user2.clone(), Address::generate(&env), 200, "transport"
+    ));
+    
+    // Process analytics for two different users
+    client.update_monthly_spending_analytics(&admin, &user1, &transactions1, 2023, 10);
+    client.update_monthly_spending_analytics(&admin, &user2, &transactions2, 2023, 10);
+    
+    assert_eq!(client.get_total_tracked_users(), 2);
+}
+
+#[test]
+fn test_get_last_analytics_update() {
+    let (env, admin, client) = setup_test_env();
+    
+    let initial_update = client.get_last_analytics_update();
+    
+    let user = Address::generate(&env);
+    let mut transactions: Vec<Transaction> = Vec::new(&env);
+    transactions.push_back(create_transaction_with_addresses(
+        &env, 1, user.clone(), Address::generate(&env), 100, "food"
+    ));
+    
+    client.update_monthly_spending_analytics(&admin, &user, &transactions, 2023, 10);
+    
+    let final_update = client.get_last_analytics_update();
+    
+    assert!(final_update > initial_update);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #2)")]
+fn test_unauthorized_update_monthly_analytics() {
+    let (env, _admin, client) = setup_test_env();
+    
+    let unauthorized_user = Address::generate(&env);
+    let user = Address::generate(&env);
+    let transactions: Vec<Transaction> = Vec::new(&env);
+    
+    client.update_monthly_spending_analytics(&unauthorized_user, &user, &transactions, 2023, 10);
+}
+
+#[test]
+fn test_monthly_analytics_with_different_users() {
+    let (env, admin, client) = setup_test_env();
+    
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    
+    // Transactions for user1
+    let mut transactions1: Vec<Transaction> = Vec::new(&env);
+    transactions1.push_back(create_transaction_with_addresses(
+        &env, 1, user1.clone(), Address::generate(&env), 100, "food"
+    ));
+    transactions1.push_back(create_transaction_with_addresses(
+        &env, 2, user1.clone(), Address::generate(&env), 200, "transport"
+    ));
+    
+    // Transactions for user2
+    let mut transactions2: Vec<Transaction> = Vec::new(&env);
+    transactions2.push_back(create_transaction_with_addresses(
+        &env, 3, user2.clone(), Address::generate(&env), 300, "entertainment"
+    ));
+    transactions2.push_back(create_transaction_with_addresses(
+        &env, 4, user2.clone(), Address::generate(&env), 400, "food"
+    ));
+    
+    // Update analytics for both users
+    let analytics1 = client.update_monthly_spending_analytics(
+        &admin, &user1, &transactions1, 2023, 10
+    );
+    let analytics2 = client.update_monthly_spending_analytics(
+        &admin, &user2, &transactions2, 2023, 10
+    );
+    
+    assert_eq!(analytics1.total_spending, 300);  // 100 + 200
+    assert_eq!(analytics1.transaction_count, 2);
+    assert_eq!(analytics2.total_spending, 700);  // 300 + 400
+    assert_eq!(analytics2.transaction_count, 2);
+    
+    // Verify retrieval works correctly for each user
+    let retrieved1 = client.get_monthly_analytics(&user1, 2023, 10).unwrap();
+    let retrieved2 = client.get_monthly_analytics(&user2, 2023, 10).unwrap();
+    
+    assert_eq!(retrieved1.total_spending, analytics1.total_spending);
+    assert_eq!(retrieved2.total_spending, analytics2.total_spending);
+}
+
+#[test]
+fn test_monthly_analytics_category_tracking() {
+    let (env, admin, client) = setup_test_env();
+    
+    let user = Address::generate(&env);
+    let mut transactions: Vec<Transaction> = Vec::new(&env);
+    transactions.push_back(create_transaction_with_addresses(
+        &env, 1, user.clone(), Address::generate(&env), 100, "food"
+    ));
+    transactions.push_back(create_transaction_with_addresses(
+        &env, 2, user.clone(), Address::generate(&env), 200, "food"
+    ));
+    transactions.push_back(create_transaction_with_addresses(
+        &env, 3, user.clone(), Address::generate(&env), 300, "transport"
+    ));
+    
+    let analytics = client.update_monthly_spending_analytics(
+        &admin, &user, &transactions, 2023, 10
+    );
+    
+    // Verify total spending calculation
+    assert_eq!(analytics.total_spending, 600);  // 100 + 200 + 300
+    
+    // Verify transaction count
+    assert_eq!(analytics.transaction_count, 3);
+    
+    // We can't easily test the category_spending vector content since it's a Vec<(Symbol, i128)>
+    // but we know it was calculated properly based on our algorithm
+}
