@@ -1,0 +1,108 @@
+#![cfg(test)]
+
+use super::*;
+use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::{token, Address, Env};
+
+fn create_token_contract<'a>(e: &Env, admin: &Address) -> (Address, token::Client<'a>) {
+    let addr = e.register_stellar_asset_contract(admin.clone());
+    (addr.clone(), token::Client::new(e, &addr))
+}
+
+#[test]
+fn test_recurring_payment_flow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let (token_addr, token_client) = create_token_contract(&env, &admin);
+    let amount = 1000i128;
+    let interval = 3600u64; // 1 hour
+    let start_time = 1000u64;
+
+    token_client.mint(&sender, &5000i128);
+
+    let contract_id = env.register_contract(None, RecurringPaymentContract);
+    let client = RecurringPaymentContractClient::new(&env, &contract_id);
+
+    // 1. Create payment
+    let payment_id = client.create_payment(&sender, &recipient, &token_addr, &amount, &interval, &start_time);
+    assert_eq!(payment_id, 1);
+
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.amount, amount);
+    assert_eq!(payment.next_execution, start_time);
+    assert!(payment.active);
+
+    // 2. Try to execute too early
+    env.ledger().set_timestamp(start_time - 1);
+    // client.execute_payment(&payment_id); // This should panic
+
+    // 3. Execute at start_time
+    env.ledger().set_timestamp(start_time);
+    client.execute_payment(&payment_id);
+
+    assert_eq!(token_client.balance(&sender), 4000);
+    assert_eq!(token_client.balance(&recipient), 1000);
+
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.next_execution, start_time + interval);
+
+    // 4. Cancel payment
+    client.cancel_payment(&payment_id);
+    let payment = client.get_payment(&payment_id);
+    assert!(!payment.active);
+
+    // 5. Try to execute canceled payment
+    env.ledger().set_timestamp(start_time + interval);
+    // client.execute_payment(&payment_id); // This should panic
+}
+
+#[test]
+#[should_panic(expected = "Amount must be positive")]
+fn test_create_with_zero_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    let contract_id = env.register_contract(None, RecurringPaymentContract);
+    let client = RecurringPaymentContractClient::new(&env, &contract_id);
+
+    client.create_payment(&sender, &recipient, &token, &0, &3600, &1000);
+}
+
+#[test]
+fn test_execute_with_delay() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let (token_addr, token_client) = create_token_contract(&env, &admin);
+    let amount = 1000i128;
+    let interval = 3600u64;
+    let start_time = 1000u64;
+
+    token_client.mint(&sender, &5000i128);
+
+    let contract_id = env.register_contract(None, RecurringPaymentContract);
+    let client = RecurringPaymentContractClient::new(&env, &contract_id);
+
+    client.create_payment(&sender, &recipient, &token_addr, &amount, &interval, &start_time);
+
+    // Set time way ahead (e.g., 2.5 intervals ahead)
+    env.ledger().set_timestamp(start_time + interval * 2 + 500);
+    client.execute_payment(&1);
+
+    let payment = client.get_payment(&1);
+    // next_execution should be start_time + 3 * interval
+    assert_eq!(payment.next_execution, start_time + 3 * interval);
+    assert_eq!(token_client.balance(&recipient), 1000);
+}
