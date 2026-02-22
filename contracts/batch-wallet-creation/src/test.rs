@@ -3,7 +3,8 @@
 #![cfg(test)]
 
 use crate::{
-    BatchWalletContract, BatchWalletContractClient, WalletCreateRequest, WalletCreateResult,
+    BatchCreateResult, BatchRecoveryResult, BatchWalletContract, BatchWalletContractClient,
+    WalletCreateRequest, WalletCreateResult, WalletRecoveryRequest, WalletRecoveryResult,
 };
 use soroban_sdk::{
     testutils::{Address as _, Events as _, Ledger},
@@ -31,6 +32,17 @@ fn setup_test_env() -> (Env, Address, BatchWalletContractClient<'static>) {
 /// Helper to create a wallet creation request.
 fn create_wallet_request(_env: &Env, owner: Address) -> WalletCreateRequest {
     WalletCreateRequest { owner }
+}
+
+fn create_recovery_request(
+    _env: &Env,
+    old_owner: Address,
+    new_owner: Address,
+) -> WalletRecoveryRequest {
+    WalletRecoveryRequest {
+        old_owner,
+        new_owner,
+    }
 }
 
 // Initialization Tests
@@ -297,4 +309,173 @@ fn test_multiple_simultaneous_batch_creations() {
     // Verify contract stats
     assert_eq!(client.get_total_batches(), 2);
     assert_eq!(client.get_total_wallets_created(), 4); // 3 + 1
+}
+
+#[test]
+fn test_batch_recover_wallets_single_success() {
+    let (env, admin, client) = setup_test_env();
+
+    let original_owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    let mut create_requests: Vec<WalletCreateRequest> = Vec::new(&env);
+    create_requests.push_back(create_wallet_request(&env, original_owner.clone()));
+    let create_result: BatchCreateResult = client.batch_create_wallets(&admin, &create_requests);
+    assert_eq!(create_result.successful, 1);
+
+    let mut recovery_requests: Vec<WalletRecoveryRequest> = Vec::new(&env);
+    recovery_requests.push_back(create_recovery_request(
+        &env,
+        original_owner.clone(),
+        new_owner.clone(),
+    ));
+
+    let recover_result: BatchRecoveryResult =
+        client.batch_recover_wallets(&admin, &recovery_requests);
+
+    assert_eq!(recover_result.total_requests, 1);
+    assert_eq!(recover_result.successful, 1);
+    assert_eq!(recover_result.failed, 0);
+    assert_eq!(recover_result.results.len(), 1);
+
+    match recover_result.results.get(0).unwrap() {
+        WalletRecoveryResult::Success(old, new_) => {
+            assert_eq!(old, original_owner);
+            assert_eq!(new_, new_owner);
+        }
+        _ => panic!("expected success result"),
+    }
+
+    let original_wallet = client.get_wallet(&original_owner);
+    assert!(original_wallet.is_none());
+
+    let recovered_wallet = client.get_wallet(&new_owner).unwrap();
+    assert_eq!(recovered_wallet.owner, new_owner);
+    assert_eq!(recovered_wallet.id, 1);
+}
+
+#[test]
+fn test_batch_recover_wallets_partial_failures() {
+    let (env, admin, client) = setup_test_env();
+
+    let existing_owner = Address::generate(&env);
+    let other_existing_owner = Address::generate(&env);
+    let non_existing_owner = Address::generate(&env);
+    let recovery_target_1 = Address::generate(&env);
+    let recovery_target_2 = Address::generate(&env);
+
+    let mut create_requests: Vec<WalletCreateRequest> = Vec::new(&env);
+    create_requests.push_back(create_wallet_request(&env, existing_owner.clone()));
+    create_requests.push_back(create_wallet_request(
+        &env,
+        other_existing_owner.clone(),
+    ));
+    client.batch_create_wallets(&admin, &create_requests);
+
+    let mut recovery_requests: Vec<WalletRecoveryRequest> = Vec::new(&env);
+    recovery_requests.push_back(create_recovery_request(
+        &env,
+        non_existing_owner.clone(),
+        recovery_target_1.clone(),
+    ));
+    recovery_requests.push_back(create_recovery_request(
+        &env,
+        existing_owner.clone(),
+        existing_owner.clone(),
+    ));
+    recovery_requests.push_back(create_recovery_request(
+        &env,
+        existing_owner.clone(),
+        recovery_target_2.clone(),
+    ));
+
+    let recover_result = client.batch_recover_wallets(&admin, &recovery_requests);
+
+    assert_eq!(recover_result.total_requests, 3);
+    assert_eq!(recover_result.successful, 1);
+    assert_eq!(recover_result.failed, 2);
+
+    match recover_result.results.get(0).unwrap() {
+        WalletRecoveryResult::Failure(old, new_, code) => {
+            assert_eq!(old, non_existing_owner);
+            assert_eq!(new_, recovery_target_1);
+            assert_eq!(code, 1);
+        }
+        _ => panic!("expected failure for non-existing source wallet"),
+    }
+
+    match recover_result.results.get(1).unwrap() {
+        WalletRecoveryResult::Failure(old, new_, code) => {
+            assert_eq!(old, existing_owner);
+            assert_eq!(new_, existing_owner);
+            assert_eq!(code, 2);
+        }
+        _ => panic!("expected failure for invalid destination wallet"),
+    }
+
+    match recover_result.results.get(2).unwrap() {
+        WalletRecoveryResult::Success(old, new_) => {
+            assert_eq!(old, existing_owner);
+            assert_eq!(new_, recovery_target_2);
+        }
+        _ => panic!("expected success for valid recovery"),
+    }
+
+    let still_existing = client.get_wallet(&other_existing_owner).unwrap();
+    assert_eq!(still_existing.owner, other_existing_owner);
+
+    let recovered_wallet = client.get_wallet(&recovery_target_2).unwrap();
+    assert_eq!(recovered_wallet.owner, recovery_target_2);
+}
+
+#[test]
+fn test_batch_recover_wallets_events_emitted() {
+    let (env, admin, client) = setup_test_env();
+
+    let original_owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    let mut create_requests: Vec<WalletCreateRequest> = Vec::new(&env);
+    create_requests.push_back(create_wallet_request(&env, original_owner.clone()));
+    client.batch_create_wallets(&admin, &create_requests);
+
+    let mut recovery_requests: Vec<WalletRecoveryRequest> = Vec::new(&env);
+    recovery_requests.push_back(create_recovery_request(
+        &env,
+        original_owner.clone(),
+        new_owner.clone(),
+    ));
+
+    client.batch_recover_wallets(&admin, &recovery_requests);
+
+    let events = env.events().all();
+    assert!(events.len() >= 3);
+}
+
+#[test]
+#[should_panic]
+fn test_batch_recover_wallets_empty_batch() {
+    let (env, admin, client) = setup_test_env();
+
+    let recovery_requests: Vec<WalletRecoveryRequest> = Vec::new(&env);
+    client.batch_recover_wallets(&admin, &recovery_requests);
+}
+
+#[test]
+#[should_panic]
+fn test_batch_recover_wallets_unauthorized() {
+    let (env, _admin, client) = setup_test_env();
+
+    let original_owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    let mut recovery_requests: Vec<WalletRecoveryRequest> = Vec::new(&env);
+    recovery_requests.push_back(create_recovery_request(
+        &env,
+        original_owner,
+        new_owner,
+    ));
+
+    let unauthorized = Address::generate(&env);
+    client.batch_recover_wallets(&unauthorized, &recovery_requests);
 }

@@ -11,7 +11,21 @@ pub struct TransferRequest {
 
 #[derive(Clone, Debug)]
 #[contracttype]
+pub struct BurnRequest {
+    pub owner: Address,
+    pub amount: i128,
+}
+
+#[derive(Clone, Debug)]
+#[contracttype]
 pub enum TransferResult {
+    Success(Address, i128),
+    Failure(Address, i128, u32),
+}
+
+#[derive(Clone, Debug)]
+#[contracttype]
+pub enum BurnResult {
     Success(Address, i128),
     Failure(Address, i128, u32),
 }
@@ -24,6 +38,16 @@ pub struct BatchTransferResult {
     pub failed: u32,
     pub total_transferred: i128,
     pub results: Vec<TransferResult>,
+}
+
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct BatchBurnResult {
+    pub total_requests: u32,
+    pub successful: u32,
+    pub failed: u32,
+    pub total_burned: i128,
+    pub results: Vec<BurnResult>,
 }
 
 #[derive(Clone)]
@@ -78,5 +102,36 @@ impl TransferEvents {
         let topics = (symbol_short!("batch"), symbol_short!("completed"), batch_id);
         env.events()
             .publish(topics, (successful, failed, total_transferred));
+    }
+
+    pub fn burn_success(env: &Env, batch_id: u64, owner: &Address, amount: i128) {
+        let topics = (symbol_short!("burn"), symbol_short!("success"), batch_id);
+        env.events().publish(topics, (owner.clone(), amount));
+    }
+
+    pub fn burn_failure(
+        env: &Env,
+        batch_id: u64,
+        owner: &Address,
+        requested_amount: i128,
+        error_code: u32,
+    ) {
+        let topics = (symbol_short!("burn"), symbol_short!("failure"), batch_id);
+        env.events().publish(
+            topics,
+            (owner.clone(), requested_amount, error_code),
+        );
+    }
+
+    pub fn burn_batch_completed(
+        env: &Env,
+        batch_id: u64,
+        successful: u32,
+        failed: u32,
+        total_burned: i128,
+    ) {
+        let topics = (symbol_short!("burn"), symbol_short!("completed"), batch_id);
+        env.events()
+            .publish(topics, (successful, failed, total_burned));
     }
 }

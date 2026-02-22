@@ -95,6 +95,82 @@ pub struct BatchGoalResult {
     pub metrics: BatchGoalMetrics,
 }
 
+/// Represents a milestone achievement request for a goal.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct MilestoneAchievementRequest {
+    /// Goal ID to mark milestone for
+    pub goal_id: u64,
+    /// User's address (must be the goal owner)
+    pub user: Address,
+    /// Milestone percentage (1-100)
+    pub milestone_percentage: u32,
+    /// Achievement timestamp (ledger sequence number)
+    pub achieved_at: u64,
+}
+
+/// Represents an achieved milestone for a goal.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct MilestoneAchievement {
+    /// Unique milestone ID
+    pub milestone_id: u64,
+    /// Associated goal ID
+    pub goal_id: u64,
+    /// User's address
+    pub user: Address,
+    /// Milestone percentage (1-100)
+    pub milestone_percentage: u32,
+    /// Current goal amount at time of achievement
+    pub goal_amount_at_achievement: i128,
+    /// Ledger sequence when milestone was achieved
+    pub achieved_at: u64,
+}
+
+/// Result of processing a single milestone achievement.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub enum MilestoneResult {
+    Success(MilestoneAchievement),
+    Failure(u64, u32), // goal_id, error_code
+}
+
+/// Aggregated metrics for a batch of milestone achievements.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct BatchMilestoneMetrics {
+    /// Total number of milestone requests
+    pub total_requests: u32,
+    /// Number of successful milestones
+    pub successful_milestones: u32,
+    /// Number of failed milestones
+    pub failed_milestones: u32,
+    /// Total percentage points achieved
+    pub total_percentage_points: u32,
+    /// Average percentage per milestone
+    pub avg_percentage: u32,
+    /// Batch processing timestamp
+    pub processed_at: u64,
+}
+
+/// Result of batch milestone achievement marking.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct BatchMilestoneResult {
+    /// Batch ID
+    pub batch_id: u64,
+    /// Total number of requests
+    pub total_requests: u32,
+    /// Number of successful milestones
+    pub successful: u32,
+    /// Number of failed milestones
+    pub failed: u32,
+    /// Individual milestone results
+    pub results: Vec<MilestoneResult>,
+    /// Aggregated metrics
+    pub metrics: BatchMilestoneMetrics,
+}
+
 /// Storage keys for contract state.
 #[derive(Clone)]
 #[contracttype]
@@ -113,6 +189,14 @@ pub enum DataKey {
     TotalGoalsCreated,
     /// Total batches processed lifetime
     TotalBatchesProcessed,
+    /// Last created milestone ID
+    LastMilestoneId,
+    /// Stored milestone by milestone_id
+    Milestone(u64),
+    /// Goal's milestones (goal_id -> Vec<milestone_id>)
+    GoalMilestones(u64),
+    /// Total milestones achieved lifetime
+    TotalMilestonesAchieved,
 }
 
 /// Error codes for goal validation and creation.
@@ -127,6 +211,16 @@ pub mod ErrorCode {
     pub const INVALID_GOAL_NAME: u32 = 3;
     /// User address is invalid
     pub const INVALID_USER_ADDRESS: u32 = 4;
+    /// Goal does not exist
+    pub const GOAL_NOT_FOUND: u32 = 5;
+    /// Invalid milestone percentage (not 1-100)
+    pub const INVALID_MILESTONE_PERCENTAGE: u32 = 6;
+    /// Goal is not active
+    pub const GOAL_NOT_ACTIVE: u32 = 7;
+    /// User is not the goal owner
+    pub const UNAUTHORIZED_USER: u32 = 8;
+    /// Goal has already achieved this milestone
+    pub const MILESTONE_ALREADY_ACHIEVED: u32 = 9;
 }
 
 /// Events emitted by the savings goals contract.
@@ -171,5 +265,43 @@ impl GoalEvents {
     pub fn high_value_goal(env: &Env, batch_id: u64, goal_id: u64, amount: i128) {
         let topics = (symbol_short!("goal"), symbol_short!("highval"), batch_id);
         env.events().publish(topics, (goal_id, amount));
+    }
+
+    /// Event emitted when batch milestone achievement starts.
+    pub fn milestone_batch_started(env: &Env, batch_id: u64, request_count: u32) {
+        let topics = (symbol_short!("milestone"), symbol_short!("start"));
+        env.events().publish(topics, (batch_id, request_count));
+    }
+
+    /// Event emitted when a milestone is successfully achieved.
+    pub fn milestone_achieved(env: &Env, batch_id: u64, milestone: &MilestoneAchievement) {
+        let topics = (symbol_short!("milestone"), symbol_short!("achieved"), batch_id);
+        env.events().publish(
+            topics,
+            (
+                milestone.milestone_id,
+                milestone.goal_id,
+                milestone.milestone_percentage,
+            ),
+        );
+    }
+
+    /// Event emitted when milestone achievement fails.
+    pub fn milestone_achievement_failed(env: &Env, batch_id: u64, goal_id: u64, error_code: u32) {
+        let topics = (symbol_short!("milestone"), symbol_short!("failed"), batch_id);
+        env.events().publish(topics, (goal_id, error_code));
+    }
+
+    /// Event emitted when batch milestone achievement completes.
+    pub fn milestone_batch_completed(
+        env: &Env,
+        batch_id: u64,
+        successful: u32,
+        failed: u32,
+        total_percentage: u32,
+    ) {
+        let topics = (symbol_short!("milestone"), symbol_short!("done"));
+        env.events()
+            .publish(topics, (batch_id, successful, failed, total_percentage));
     }
 }

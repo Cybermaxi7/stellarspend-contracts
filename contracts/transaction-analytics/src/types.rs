@@ -216,6 +216,17 @@ pub enum DataKey {
     Rating(u64, Address),
     /// Stored status per transaction ID
     TransactionStatus(u64),
+    
+    /// Monthly spending analytics for a user (year, month, user)
+    MonthlyAnalytics(u32, u32, Address),
+    /// User spending summary
+    UserSpendingSummary(Address),
+    /// Total number of unique users tracked
+    TotalTrackedUsers,
+    /// Analytics update timestamp
+    LastAnalyticsUpdate,
+    /// Current fee configuration
+    CurrentFeeConfig,
 }
 
 /// Status indicating refund eligibility for a transaction.
@@ -232,6 +243,112 @@ pub enum RefundStatus {
     NotEligible,
     /// Transaction ID not found
     NotFound,
+}
+
+/// Error codes for validation failures
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum ValidationError {
+    /// Invalid address provided
+    InvalidAddress,
+    /// Invalid amount (zero or negative)
+    InvalidAmount,
+    /// Invalid timestamp
+    InvalidTimestamp,
+    /// Invalid category
+    InvalidCategory,
+    /// Invalid transaction ID
+    InvalidTransactionId,
+    /// Invalid reason string
+    InvalidReason,
+    /// Invalid rating score
+    InvalidRating,
+    /// Invalid memo string
+    InvalidMemo,
+    /// Invalid year value
+    InvalidYear,
+    /// Invalid month value
+    InvalidMonth,
+    /// Invalid percentage value
+    InvalidPercentage,
+    /// Addresses are the same when they should be different
+    SameAddress,
+    /// Batch is empty when it shouldn't be
+    EmptyBatch,
+    /// Batch is too large
+    BatchTooLarge,
+    /// Duplicate transaction ID in batch
+    DuplicateTransactionId,
+}
+
+/// Fee calculation models
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum FeeModel {
+    /// Flat fee amount
+    Flat(i128),
+    /// Percentage of transaction amount (in basis points)
+    Percentage(u32),
+    /// Tiered fee structure based on amount thresholds
+    Tiered(Vec<FeeTier>),
+}
+
+/// Fee tier definition
+#[derive(Clone, Debug, Default)]
+#[contracttype]
+pub struct FeeTier {
+    /// Amount threshold for this tier
+    pub threshold: i128,
+    /// Fee model for this tier
+    pub fee_model: FeeModel,
+    /// Default percentage in basis points (for fallback calculations)
+    pub default_percentage_bps: u32,
+}
+
+/// Fee configuration structure
+#[derive(Clone, Debug, Default)]
+#[contracttype]
+pub struct FeeConfig {
+    /// The fee model to use
+    pub fee_model: FeeModel,
+    /// Minimum fee amount (optional)
+    pub min_fee: Option<u64>,
+    /// Maximum fee amount (optional)
+    pub max_fee: Option<u64>,
+    /// Whether fees are currently enabled
+    pub enabled: bool,
+    /// Description of the fee configuration
+    pub description: Option<Symbol>,
+}
+
+/// Result of a fee calculation
+#[derive(Clone, Debug, Default)]
+#[contracttype]
+pub struct FeeCalculationResult {
+    /// Original transaction amount
+    pub gross_amount: i128,
+    /// Calculated fee amount
+    pub fee_amount: i128,
+    /// Net amount after fee deduction
+    pub net_amount: i128,
+    /// Effective fee rate in basis points
+    pub fee_percentage_bps: u32,
+}
+
+/// Event structure for fee deductions
+#[derive(Clone, Debug, Default)]
+#[contracttype]
+pub struct FeeDeductionEvent {
+    /// Timestamp of the deduction
+    pub timestamp: u64,
+    /// Gross transaction amount
+    pub gross_amount: i128,
+    /// Fee amount deducted
+    pub fee_amount: i128,
+    /// Net amount after fee
+    pub net_amount: i128,
+    /// Fee percentage in basis points
+    pub fee_percentage_bps: u32,
 }
 
 /// Request structure for a single transaction refund.
@@ -276,6 +393,40 @@ pub struct RefundBatchMetrics {
     pub avg_refund_amount: i128,
     /// Timestamp when batch was processed
     pub processed_at: u64,
+}
+
+/// Structure to hold monthly spending analytics for a user
+#[derive(Clone, Debug, Default)]
+#[contracttype]
+pub struct MonthlySpendingAnalytics {
+    /// Year of the analytics
+    pub year: u32,
+    /// Month of the analytics
+    pub month: u32,
+    /// User address
+    pub user: Address,
+    /// Total spending for the month
+    pub total_spending: i128,
+    /// Map of category spending
+    pub category_spending: Vec<(Symbol, i128)>,  // Changed from Map to Vec for contracttype compatibility
+    /// Number of transactions in the period
+    pub transaction_count: u32,
+}
+
+/// Structure for aggregated user spending across multiple months
+#[derive(Clone, Debug, Default)]
+#[contracttype]
+pub struct UserSpendingSummary {
+    /// User address
+    pub user: Address,
+    /// Total spending across all tracked periods
+    pub total_spending: i128,
+    /// Total number of transactions
+    pub total_transactions: u32,
+    /// Most common spending category
+    pub primary_category: Symbol,
+    /// Average monthly spending
+    pub avg_monthly_spending: i128,
 }
 
 /// Events emitted by the analytics contract.
@@ -404,5 +555,29 @@ impl AnalyticsEvents {
     pub fn refund_error(env: &Env, batch_id: u64, tx_id: u64, error_msg: Symbol) {
         let topics = (symbol_short!("refund"), symbol_short!("error"));
         env.events().publish(topics, (batch_id, tx_id, error_msg));
+    }
+    
+    /// Event emitted when analytics are updated for a user.
+    pub fn analytics_updated(
+        env: &Env,
+        user: &Address,
+        year: u32,
+        month: u32,
+        analytics: &MonthlySpendingAnalytics,
+    ) {
+        let topics = (symbol_short!("analytics"), symbol_short!("updated"), user);
+        env.events().publish(topics, (year, month, analytics.total_spending, analytics.transaction_count));
+    }
+    
+    /// Event emitted when a fee is deducted from a transaction.
+    pub fn fee_deducted(
+        env: &Env,
+        gross_amount: i128,
+        fee_amount: i128,
+        net_amount: i128,
+        fee_percentage_bps: u32,
+    ) {
+        let topics = (symbol_short!("fee"), symbol_short!("deducted"));
+        env.events().publish(topics, (gross_amount, fee_amount, net_amount, fee_percentage_bps));
     }
 }

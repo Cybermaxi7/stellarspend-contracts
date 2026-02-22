@@ -2,7 +2,10 @@
 
 #![cfg(test)]
 
-use crate::{BatchTransferContract, BatchTransferContractClient, TransferRequest, TransferResult};
+use crate::{
+    BatchBurnResult, BatchTransferContract, BatchTransferContractClient, BurnRequest,
+    TransferRequest, TransferResult,
+};
 use soroban_sdk::{
     testutils::{Address as _, Events as _, Ledger},
     token, Address, Env, Vec,
@@ -45,6 +48,10 @@ fn create_transfer_request(_env: &Env, recipient: Address, amount: i128) -> Tran
     TransferRequest { recipient, amount }
 }
 
+fn create_burn_request(_env: &Env, owner: Address, amount: i128) -> BurnRequest {
+    BurnRequest { owner, amount }
+}
+
 // Initialization Tests
 
 #[test]
@@ -70,10 +77,13 @@ fn test_cannot_initialize_twice() {
 
 #[test]
 fn test_batch_transfer_single_recipient() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient = Address::generate(&env);
     let amount: i128 = 10_000_000; // 1 XLM
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    token_admin_client.mint(&admin, &amount);
 
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     transfers.push_back(create_transfer_request(&env, recipient.clone(), amount));
@@ -93,7 +103,7 @@ fn test_batch_transfer_single_recipient() {
 
 #[test]
 fn test_batch_transfer_multiple_recipients() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
@@ -102,6 +112,10 @@ fn test_batch_transfer_multiple_recipients() {
     let amount1: i128 = 10_000_000; // 1 XLM
     let amount2: i128 = 20_000_000; // 2 XLM
     let amount3: i128 = 30_000_000; // 3 XLM
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let total_amount = amount1 + amount2 + amount3;
+    token_admin_client.mint(&admin, &total_amount);
 
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     transfers.push_back(create_transfer_request(&env, recipient1.clone(), amount1));
@@ -126,12 +140,16 @@ fn test_batch_transfer_with_invalid_amount() {
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
 
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let valid_amount: i128 = 10_000_000;
+    token_admin_client.mint(&admin, &valid_amount);
+
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     transfers.push_back(create_transfer_request(&env, recipient1.clone(), -100)); // Invalid: negative
     transfers.push_back(create_transfer_request(
         &env,
         recipient2.clone(),
-        10_000_000,
+        valid_amount,
     )); // Valid
 
     let result = client.batch_transfer(&admin, &token, &transfers);
@@ -139,7 +157,7 @@ fn test_batch_transfer_with_invalid_amount() {
     assert_eq!(result.total_requests, 2);
     assert_eq!(result.successful, 1);
     assert_eq!(result.failed, 1);
-    assert_eq!(result.total_transferred, 10_000_000);
+    assert_eq!(result.total_transferred, valid_amount);
 
     // Check that first result is failure
     match result.results.get(0).unwrap() {
@@ -155,7 +173,7 @@ fn test_batch_transfer_with_invalid_amount() {
     match result.results.get(1).unwrap() {
         TransferResult::Success(recv, amount) => {
             assert_eq!(recv.clone(), recipient2);
-            assert_eq!(amount.clone(), 10_000_000);
+            assert_eq!(amount.clone(), valid_amount);
         }
         _ => panic!("Expected success for valid transfer"),
     }
@@ -163,13 +181,16 @@ fn test_batch_transfer_with_invalid_amount() {
 
 #[test]
 fn test_batch_transfer_with_insufficient_balance() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
 
     let amount1: i128 = 10_000_000; // 1 XLM
     let amount2: i128 = 1_000_000_000_001; // More than available
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    token_admin_client.mint(&admin, &amount1);
 
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     transfers.push_back(create_transfer_request(&env, recipient1.clone(), amount1));
@@ -188,12 +209,16 @@ fn test_batch_transfer_with_insufficient_balance() {
 
 #[test]
 fn test_batch_transfer_partial_failures() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
     let recipient3 = Address::generate(&env);
     let recipient4 = Address::generate(&env);
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let valid_total: i128 = 10_000_000 + 20_000_000;
+    token_admin_client.mint(&admin, &valid_total);
 
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     transfers.push_back(create_transfer_request(
@@ -227,11 +252,15 @@ fn test_batch_transfer_events_emitted() {
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
 
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let valid_amount: i128 = 10_000_000;
+    token_admin_client.mint(&admin, &valid_amount);
+
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     transfers.push_back(create_transfer_request(
         &env,
         recipient1.clone(),
-        10_000_000,
+        valid_amount,
     ));
     transfers.push_back(create_transfer_request(&env, recipient2.clone(), -100)); // Invalid
 
@@ -248,6 +277,10 @@ fn test_batch_transfer_accumulates_stats() {
 
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let total_amount: i128 = 10_000_000 + 20_000_000;
+    token_admin_client.mint(&admin, &total_amount);
 
     let mut transfers1: Vec<TransferRequest> = Vec::new(&env);
     transfers1.push_back(create_transfer_request(
@@ -304,7 +337,13 @@ fn test_batch_transfer_unauthorized() {
 
 #[test]
 fn test_batch_transfer_large_batch() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let batch_size: i128 = 50;
+    let amount_per_recipient: i128 = 1_000_000;
+    let total_amount = batch_size * amount_per_recipient;
+    token_admin_client.mint(&admin, &total_amount);
 
     // Create a batch with 50 recipients
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
@@ -313,7 +352,7 @@ fn test_batch_transfer_large_batch() {
     for _i in 0..50 {
         let recipient = Address::generate(&env);
         recipients.push_back(recipient.clone());
-        transfers.push_back(create_transfer_request(&env, recipient, 1_000_000));
+        transfers.push_back(create_transfer_request(&env, recipient, amount_per_recipient));
         // 0.1 XLM each
     }
 
@@ -322,7 +361,7 @@ fn test_batch_transfer_large_batch() {
     assert_eq!(result.total_requests, 50);
     assert_eq!(result.successful, 50);
     assert_eq!(result.failed, 0);
-    assert_eq!(result.total_transferred, 50_000_000); // 5 XLM total
+    assert_eq!(result.total_transferred, total_amount); // 5 XLM total
 
     // Note: Balance verification for all recipients would be done in integration tests
 }
@@ -343,7 +382,13 @@ fn test_set_admin() {
 
 #[test]
 fn test_multiple_simultaneous_batch_transfers() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    let total_batch1: i128 = 10_000_000 + 20_000_000 + 30_000_000;
+    let total_batch2: i128 = 5_000_000 + 15_000_000;
+    let total_amount: i128 = total_batch1 + total_batch2;
+    token_admin_client.mint(&admin, &total_amount);
 
     // First batch: 3 recipients
     let recipient1 = Address::generate(&env);
@@ -397,4 +442,103 @@ fn test_multiple_simultaneous_batch_transfers() {
     assert_eq!(client.get_total_batches(), 2);
     assert_eq!(client.get_total_transfers_processed(), 5);
     assert_eq!(client.get_total_volume_transferred(), 80_000_000);
+}
+
+#[test]
+fn test_batch_burn_single_owner() {
+    let (env, admin, token, _token_client, client) = setup_test_env();
+
+    let owner = Address::generate(&env);
+    let amount: i128 = 10_000_000;
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    token_admin_client.mint(&owner, &amount);
+
+    let mut burns: Vec<BurnRequest> = Vec::new(&env);
+    burns.push_back(create_burn_request(&env, owner.clone(), amount));
+
+    let result: BatchBurnResult = client.batch_burn(&admin, &token, &burns);
+
+    assert_eq!(result.total_requests, 1);
+    assert_eq!(result.successful, 1);
+    assert_eq!(result.failed, 0);
+    assert_eq!(result.total_burned, amount);
+    assert_eq!(result.results.len(), 1);
+
+    match result.results.get(0).unwrap() {
+        crate::BurnResult::Success(addr, burned) => {
+            assert_eq!(addr.clone(), owner);
+            assert_eq!(burned.clone(), amount);
+        }
+        _ => panic!("expected success burn result"),
+    }
+}
+
+#[test]
+fn test_batch_burn_partial_failures() {
+    let (env, admin, token, _token_client, client) = setup_test_env();
+
+    let owner1 = Address::generate(&env);
+    let owner2 = Address::generate(&env);
+    let owner3 = Address::generate(&env);
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    token_admin_client.mint(&owner1, &20_000_000);
+    token_admin_client.mint(&owner2, &5_000_000);
+
+    let mut burns: Vec<BurnRequest> = Vec::new(&env);
+    burns.push_back(create_burn_request(&env, owner1.clone(), 10_000_000));
+    burns.push_back(create_burn_request(&env, owner2.clone(), 10_000_000));
+    burns.push_back(create_burn_request(&env, owner3.clone(), 5_000_000));
+    burns.push_back(create_burn_request(&env, owner1.clone(), -1));
+
+    let result = client.batch_burn(&admin, &token, &burns);
+
+    assert_eq!(result.total_requests, 4);
+    assert_eq!(result.successful, 1);
+    assert_eq!(result.failed, 3);
+    assert_eq!(result.total_burned, 10_000_000);
+}
+
+#[test]
+fn test_batch_burn_events_emitted() {
+    let (env, admin, token, _token_client, client) = setup_test_env();
+
+    let owner1 = Address::generate(&env);
+    let owner2 = Address::generate(&env);
+
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    token_admin_client.mint(&owner1, &10_000_000);
+
+    let mut burns: Vec<BurnRequest> = Vec::new(&env);
+    burns.push_back(create_burn_request(&env, owner1.clone(), 10_000_000));
+    burns.push_back(create_burn_request(&env, owner2.clone(), 5_000_000));
+
+    client.batch_burn(&admin, &token, &burns);
+
+    let events = env.events().all();
+    assert!(events.len() >= 3);
+}
+
+#[test]
+#[should_panic]
+fn test_batch_burn_empty_batch() {
+    let (env, admin, token, _token_client, client) = setup_test_env();
+
+    let burns: Vec<BurnRequest> = Vec::new(&env);
+    client.batch_burn(&admin, &token, &burns);
+}
+
+#[test]
+#[should_panic]
+fn test_batch_burn_unauthorized() {
+    let (env, _admin, token, _token_client, client) = setup_test_env();
+
+    let owner = Address::generate(&env);
+
+    let mut burns: Vec<BurnRequest> = Vec::new(&env);
+    burns.push_back(create_burn_request(&env, owner, 10_000_000));
+
+    let unauthorized = Address::generate(&env);
+    client.batch_burn(&unauthorized, &token, &burns);
 }

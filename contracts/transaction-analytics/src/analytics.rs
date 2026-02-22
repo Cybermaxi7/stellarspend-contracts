@@ -3,7 +3,7 @@ use soroban_sdk::{Address, Env, Map, Symbol, Vec};
 use crate::types::{
     AuditLog, BatchMetrics, CategoryMetrics, Transaction, RefundRequest, RefundResult, 
     RefundStatus, RefundBatchMetrics, BundleResult, BundledTransaction, ValidationResult,
-    MAX_BATCH_SIZE,
+    MAX_BATCH_SIZE, MonthlySpendingAnalytics, UserSpendingSummary, DataKey,
 };
 
 /// Calculates the processing fee for a transaction amount.
@@ -482,6 +482,194 @@ pub fn validate_refund_batch(env: &Env, refund_requests: &Vec<RefundRequest>) ->
     }
     
     Ok(())
+}
+
+/// Computes aggregated analytics for user spending patterns
+/// 
+/// Stores monthly totals and tracks category spending
+pub fn compute_monthly_analytics(
+    env: &Env,
+    user: &Address,
+    transactions: &Vec<Transaction>,
+    year: u32,
+    month: u32,
+) -> MonthlySpendingAnalytics {
+    let mut total_spending: i128 = 0;
+    let mut transaction_count: u32 = 0;
+    let mut category_spending: Vec<(Symbol, i128)> = Vec::new(env);
+
+    for tx in transactions.iter() {
+        // Only include transactions from the specified user
+        if &tx.from == user {
+            total_spending = total_spending.checked_add(tx.amount).unwrap_or(i128::MAX);
+            transaction_count += 1;
+
+            // Update category spending
+            update_category_spending(env, &mut category_spending, tx.category.clone(), tx.amount);
+        }
+    }
+
+    MonthlySpendingAnalytics {
+        year,
+        month,
+        user: user.clone(),
+        total_spending,
+        category_spending,
+        transaction_count,
+    }
+}
+
+/// Helper function to update category spending in the vector
+fn update_category_spending(
+    env: &Env,
+    category_spending: &mut Vec<(Symbol, i128)>,
+    category: Symbol,
+    amount: i128,
+) {
+    // Look for existing category
+    let mut found_index: Option<u32> = None;
+    for i in 0..category_spending.len() {
+        let (existing_category, _) = category_spending.get(i).unwrap();
+        if existing_category == category {
+            found_index = Some(i);
+            break;
+        }
+    }
+
+    if let Some(index) = found_index {
+        // Update existing category
+        let (_, existing_amount) = category_spending.get(index).unwrap();
+        let new_amount = existing_amount.checked_add(amount).unwrap_or(i128::MAX);
+        
+        // Remove the old entry and re-add with updated amount
+        let mut new_vec = Vec::new(env);
+        for i in 0..category_spending.len() {
+            if i != index {
+                new_vec.push_back(category_spending.get(i).unwrap());
+            } else {
+                new_vec.push_back((category, new_amount));
+            }
+        }
+        *category_spending = new_vec;
+    } else {
+        // Add new category
+        category_spending.push_back((category, amount));
+    }
+}
+
+/// Updates or creates monthly analytics in storage
+pub fn update_monthly_analytics_storage(
+    env: &Env,
+    analytics: &MonthlySpendingAnalytics,
+) {
+    let key = DataKey::MonthlyAnalytics(analytics.year, analytics.month, analytics.user.clone());
+    env.storage().persistent().set(&key, &analytics);
+    
+    // Update total tracked users if this is a new user
+    let mut total_users: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::TotalTrackedUsers)
+        .unwrap_or(0);
+        
+    let user_summary_key = DataKey::UserSpendingSummary(analytics.user.clone());
+    if !env.storage().persistent().has(&user_summary_key) {
+        total_users += 1;
+        env.storage().instance().set(&DataKey::TotalTrackedUsers, &total_users);
+    }
+    
+    // Update last analytics update timestamp
+    env.storage().instance().set(&DataKey::LastAnalyticsUpdate, &env.ledger().sequence());
+}
+
+/// Computes aggregated analytics for all users and categories
+/// 
+/// This function analyzes spending patterns across all users
+pub fn compute_aggregated_analytics(
+    env: &Env,
+    transactions: &Vec<Transaction>,
+) -> (Map<Address, MonthlySpendingAnalytics>, Map<Symbol, i128>) {
+    let mut user_analytics: Map<Address, MonthlySpendingAnalytics> = Map::new(env);
+    let mut category_totals: Map<Symbol, i128> = Map::new(env);
+
+    for tx in transactions.iter() {
+        // Update user analytics
+        let mut user_data = if user_analytics.contains_key(tx.from.clone()) {
+            user_analytics.get(tx.from.clone()).unwrap()
+        } else {
+            MonthlySpendingAnalytics {
+                year: 0,
+                month: 0,
+                user: tx.from.clone(),
+                total_spending: 0,
+                category_spending: Vec::new(env),
+                transaction_count: 0,
+            }
+        };
+
+        user_data.total_spending = user_data.total_spending.checked_add(tx.amount).unwrap_or(i128::MAX);
+        user_data.transaction_count += 1;
+
+        // Update category spending for user
+        update_category_spending(env, &mut user_data.category_spending, tx.category.clone(), tx.amount);
+
+        user_analytics.set(tx.from.clone(), user_data);
+
+        // Update overall category totals
+        let category_total = category_totals.get(tx.category.clone()).unwrap_or(0);
+        category_totals.set(
+            tx.category.clone(),
+            category_total.checked_add(tx.amount).unwrap_or(i128::MAX),
+        );
+    }
+
+    (user_analytics, category_totals)
+}
+
+/// Computes user spending summary across all tracked periods
+pub fn compute_user_spending_summary(
+    env: &Env,
+    user: &Address,
+    monthly_analytics: &Vec<MonthlySpendingAnalytics>,
+) -> UserSpendingSummary {
+    let mut total_spending: i128 = 0;
+    let mut total_transactions: u32 = 0;
+    let mut category_totals: Map<Symbol, i128> = Map::new(env);
+    let mut max_category_amount: i128 = 0;
+    let mut primary_category: Symbol = Symbol::new(env, "");
+
+    for analytics in monthly_analytics.iter() {
+        if &analytics.user == user {
+            total_spending = total_spending.checked_add(analytics.total_spending).unwrap_or(i128::MAX);
+            total_transactions = total_transactions.checked_add(analytics.transaction_count).unwrap_or(u32::MAX);
+
+            // Aggregate category spending across months
+            for (category, amount) in analytics.category_spending.iter() {
+                let category_total = category_totals.get(category.clone()).unwrap_or(0);
+                category_totals.set(category.clone(), category_total.checked_add(amount).unwrap_or(i128::MAX));
+
+                // Update primary category if this is the highest spending category
+                if category_total.checked_add(amount).unwrap_or(i128::MAX) > max_category_amount {
+                    max_category_amount = category_total.checked_add(amount).unwrap_or(i128::MAX);
+                    primary_category = category.clone();
+                }
+            }
+        }
+    }
+
+    let avg_monthly_spending = if monthly_analytics.len() > 0 {
+        total_spending / (monthly_analytics.len() as i128)
+    } else {
+        0
+    };
+
+    UserSpendingSummary {
+        user: user.clone(),
+        total_spending,
+        total_transactions,
+        primary_category,
+        avg_monthly_spending,
+    }
 }
 
 // Removed duplicate functions

@@ -7,7 +7,8 @@ mod validation;
 use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, Vec};
 
 pub use crate::types::{
-    BatchTransferResult, DataKey, TransferEvents, TransferRequest, TransferResult, MAX_BATCH_SIZE,
+    BatchBurnResult, BatchTransferResult, BurnRequest, BurnResult, DataKey, TransferEvents,
+    TransferRequest, TransferResult, MAX_BATCH_SIZE,
 };
 use crate::validation::{validate_address, validate_amount};
 
@@ -233,6 +234,118 @@ impl BatchTransferContract {
             successful: successful_count,
             failed: failed_count,
             total_transferred,
+            results,
+        }
+    }
+
+    pub fn batch_burn(
+        env: Env,
+        caller: Address,
+        token: Address,
+        burns: Vec<BurnRequest>,
+    ) -> BatchBurnResult {
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+
+        let request_count = burns.len();
+        if request_count == 0 {
+            panic_with_error!(&env, BatchTransferError::EmptyBatch);
+        }
+        if request_count > MAX_BATCH_SIZE {
+            panic_with_error!(&env, BatchTransferError::BatchTooLarge);
+        }
+
+        let batch_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalBatches)
+            .unwrap_or(0)
+            + 1;
+
+        TransferEvents::batch_started(&env, batch_id, request_count);
+
+        let token_client = token::Client::new(&env, &token);
+
+        let mut results: Vec<BurnResult> = Vec::new(&env);
+        let mut successful_count: u32 = 0;
+        let mut failed_count: u32 = 0;
+        let mut total_burned: i128 = 0;
+
+        for request in burns.iter() {
+            let mut is_valid = true;
+            let mut error_code = 0u32;
+
+            if validate_address(&env, &request.owner).is_err() {
+                is_valid = false;
+                error_code = 0;
+            } else if validate_amount(request.amount).is_err() {
+                is_valid = false;
+                error_code = 1;
+            }
+
+            if !is_valid {
+                results.push_back(BurnResult::Failure(
+                    request.owner.clone(),
+                    request.amount,
+                    error_code,
+                ));
+                failed_count += 1;
+                TransferEvents::burn_failure(
+                    &env,
+                    batch_id,
+                    &request.owner,
+                    request.amount,
+                    error_code,
+                );
+                continue;
+            }
+
+            let balance = token_client.balance(&request.owner);
+            if balance < request.amount {
+                results.push_back(BurnResult::Failure(
+                    request.owner.clone(),
+                    request.amount,
+                    2,
+                ));
+                failed_count += 1;
+                TransferEvents::burn_failure(
+                    &env,
+                    batch_id,
+                    &request.owner,
+                    request.amount,
+                    2,
+                );
+                continue;
+            }
+
+            request.owner.require_auth();
+            token_client.burn(&request.owner, &request.amount);
+
+            results.push_back(BurnResult::Success(
+                request.owner.clone(),
+                request.amount,
+            ));
+            successful_count += 1;
+            total_burned = total_burned
+                .checked_add(request.amount)
+                .unwrap_or(total_burned);
+
+            TransferEvents::burn_success(&env, batch_id, &request.owner, request.amount);
+        }
+
+        TransferEvents::burn_batch_completed(
+            &env,
+            batch_id,
+            successful_count,
+            failed_count,
+            total_burned,
+        );
+
+        BatchBurnResult {
+            total_requests: request_count,
+            successful: successful_count,
+            failed: failed_count,
+            total_burned,
             results,
         }
     }

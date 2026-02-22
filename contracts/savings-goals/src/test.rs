@@ -5,7 +5,7 @@
 use crate::{SavingsGoalsContract, SavingsGoalsContractClient};
 use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env, Symbol, Vec};
 
-use crate::types::{ErrorCode, GoalResult, SavingsGoalRequest};
+use crate::types::{ErrorCode, GoalResult, MilestoneAchievementRequest, MilestoneResult, SavingsGoalRequest};
 
 /// Helper function to create a test environment with initialized contract.
 fn setup_test_contract() -> (Env, Address, SavingsGoalsContractClient<'static>) {
@@ -47,6 +47,8 @@ fn test_initialize() {
     assert_eq!(client.get_last_goal_id(), 0);
     assert_eq!(client.get_total_goals_created(), 0);
     assert_eq!(client.get_total_batches_processed(), 0);
+    assert_eq!(client.get_last_milestone_id(), 0);
+    assert_eq!(client.get_total_milestones_achieved(), 0);
 }
 
 #[test]
@@ -81,7 +83,7 @@ fn test_batch_set_savings_goals_single_user() {
 
 #[test]
 fn test_batch_set_savings_goals_multiple_users() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
 
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
@@ -118,7 +120,7 @@ fn test_batch_set_savings_goals_multiple_users() {
 
 #[test]
 fn test_batch_set_savings_goals_with_invalid_requests() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
 
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
@@ -155,7 +157,7 @@ fn test_batch_set_savings_goals_with_invalid_requests() {
 
 #[test]
 fn test_batch_set_savings_goals_invalid_deadline() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -178,7 +180,7 @@ fn test_batch_set_savings_goals_invalid_deadline() {
 
 #[test]
 fn test_batch_set_savings_goals_invalid_initial_contribution() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -202,7 +204,7 @@ fn test_batch_set_savings_goals_invalid_initial_contribution() {
 #[test]
 #[should_panic]
 fn test_batch_set_savings_goals_empty_batch() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let requests: Vec<SavingsGoalRequest> = Vec::new(&env);
     client.batch_set_savings_goals(&admin, &requests);
 }
@@ -210,7 +212,7 @@ fn test_batch_set_savings_goals_empty_batch() {
 #[test]
 #[should_panic]
 fn test_batch_set_savings_goals_batch_too_large() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -229,7 +231,7 @@ fn test_batch_set_savings_goals_batch_too_large() {
 
 #[test]
 fn test_get_goal() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -249,7 +251,7 @@ fn test_get_goal() {
 
 #[test]
 fn test_get_user_goals() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -266,7 +268,7 @@ fn test_get_user_goals() {
 
 #[test]
 fn test_batch_metrics() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
 
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
@@ -287,7 +289,7 @@ fn test_batch_metrics() {
 
 #[test]
 fn test_multiple_batches() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
 
     // First batch
     let user1 = Address::generate(&env);
@@ -311,7 +313,7 @@ fn test_multiple_batches() {
 
 #[test]
 fn test_high_value_goal_event() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -331,7 +333,7 @@ fn test_high_value_goal_event() {
 
 #[test]
 fn test_set_admin() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let new_admin = Address::generate(&env);
 
     client.set_admin(&admin, &new_admin);
@@ -341,7 +343,7 @@ fn test_set_admin() {
 
 #[test]
 fn test_mixed_valid_and_invalid_requests() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
 
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
@@ -378,7 +380,7 @@ fn test_mixed_valid_and_invalid_requests() {
 
 #[test]
 fn test_zero_initial_contribution() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -397,7 +399,7 @@ fn test_zero_initial_contribution() {
 
 #[test]
 fn test_full_initial_contribution() {
-    let (env, client, admin) = setup_test_contract();
+    let (env, admin, client) = setup_test_contract();
     let user = Address::generate(&env);
 
     let mut requests: Vec<SavingsGoalRequest> = Vec::new(&env);
@@ -412,4 +414,367 @@ fn test_full_initial_contribution() {
     let goal = client.get_goal(&1).unwrap();
     assert_eq!(goal.current_amount, 100_000_000);
     assert_eq!(goal.target_amount, 100_000_000);
+}
+
+// ==================== Milestone Achievement Tests ====================
+
+#[test]
+fn test_batch_mark_single_milestone() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal first
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Mark a milestone
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 25,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user, &milestone_requests);
+
+    assert_eq!(result.successful, 1);
+    assert_eq!(result.failed, 0);
+    assert_eq!(result.total_requests, 1);
+    assert_eq!(result.metrics.total_percentage_points, 25);
+    assert_eq!(result.metrics.avg_percentage, 25);
+    assert_eq!(client.get_total_milestones_achieved(), 1);
+}
+
+#[test]
+fn test_batch_mark_multiple_milestones() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Mark multiple milestones in one batch
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 25,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 50,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 75,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user, &milestone_requests);
+
+    assert_eq!(result.successful, 3);
+    assert_eq!(result.failed, 0);
+    assert_eq!(result.total_requests, 3);
+    assert_eq!(result.metrics.total_percentage_points, 150);
+    assert_eq!(result.metrics.avg_percentage, 50);
+
+    // Verify all milestones were created
+    let goal_milestones = client.get_goal_milestones(&1);
+    assert_eq!(goal_milestones.len(), 3);
+}
+
+#[test]
+fn test_milestone_invalid_percentage_zero() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Try to mark milestone with 0% (invalid)
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 0,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user, &milestone_requests);
+
+    assert_eq!(result.successful, 0);
+    assert_eq!(result.failed, 1);
+
+    match &result.results.get(0).unwrap() {
+        MilestoneResult::Failure(_, code) => {
+            assert_eq!(*code, ErrorCode::INVALID_MILESTONE_PERCENTAGE);
+        }
+        _ => panic!("Expected failure"),
+    }
+}
+
+#[test]
+fn test_milestone_invalid_percentage_over_100() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Try to mark milestone with >100% (invalid)
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 101,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user, &milestone_requests);
+
+    assert_eq!(result.successful, 0);
+    assert_eq!(result.failed, 1);
+
+    match &result.results.get(0).unwrap() {
+        MilestoneResult::Failure(_, code) => {
+            assert_eq!(*code, ErrorCode::INVALID_MILESTONE_PERCENTAGE);
+        }
+        _ => panic!("Expected failure"),
+    }
+}
+
+#[test]
+fn test_milestone_goal_not_found() {
+    let (env, _admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Try to mark milestone for non-existent goal
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 999,
+        user: user.clone(),
+        milestone_percentage: 50,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user, &milestone_requests);
+
+    assert_eq!(result.successful, 0);
+    assert_eq!(result.failed, 1);
+
+    match &result.results.get(0).unwrap() {
+        MilestoneResult::Failure(_, code) => {
+            assert_eq!(*code, ErrorCode::GOAL_NOT_FOUND);
+        }
+        _ => panic!("Expected failure"),
+    }
+}
+
+#[test]
+fn test_milestone_unauthorized_user() {
+    let (env, admin, client) = setup_test_contract();
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    // Create a goal for user1
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user1, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Try to mark milestone as user2 (not the goal owner)
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user1.clone(),
+        milestone_percentage: 50,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user2, &milestone_requests);
+
+    assert_eq!(result.successful, 0);
+    assert_eq!(result.failed, 1);
+
+    match &result.results.get(0).unwrap() {
+        MilestoneResult::Failure(_, code) => {
+            assert_eq!(*code, ErrorCode::UNAUTHORIZED_USER);
+        }
+        _ => panic!("Expected failure"),
+    }
+}
+
+#[test]
+fn test_milestone_duplicate_percentage() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Mark first milestone
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 50,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+    client.batch_mark_milestones(&user, &milestone_requests);
+
+    // Try to mark the same milestone again
+    let mut duplicate_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    duplicate_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 50,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user, &duplicate_requests);
+
+    assert_eq!(result.successful, 0);
+    assert_eq!(result.failed, 1);
+
+    match &result.results.get(0).unwrap() {
+        MilestoneResult::Failure(_, code) => {
+            assert_eq!(*code, ErrorCode::MILESTONE_ALREADY_ACHIEVED);
+        }
+        _ => panic!("Expected failure"),
+    }
+}
+
+#[test]
+fn test_milestone_partial_failures() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Create a batch with mixed valid and invalid requests
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+
+    // Valid
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 25,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    // Invalid - percentage too high
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 101,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    // Valid
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 75,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    // Invalid - goal not found
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 999,
+        user: user.clone(),
+        milestone_percentage: 50,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+
+    let result = client.batch_mark_milestones(&user, &milestone_requests);
+
+    assert_eq!(result.total_requests, 4);
+    assert_eq!(result.successful, 2);
+    assert_eq!(result.failed, 2);
+    assert_eq!(result.metrics.total_percentage_points, 100);
+    assert_eq!(result.metrics.avg_percentage, 50);
+
+    // Verify only successful milestones were created
+    let goal_milestones = client.get_goal_milestones(&1);
+    assert_eq!(goal_milestones.len(), 2);
+}
+
+#[test]
+fn test_milestone_retrieve_milestone() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Mark a milestone
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    milestone_requests.push_back(MilestoneAchievementRequest {
+        goal_id: 1,
+        user: user.clone(),
+        milestone_percentage: 50,
+        achieved_at: env.ledger().sequence() as u64,
+    });
+    client.batch_mark_milestones(&user, &milestone_requests);
+
+    // Retrieve and verify milestone
+    let milestone = client.get_milestone(&1).unwrap();
+    assert_eq!(milestone.milestone_id, 1);
+    assert_eq!(milestone.goal_id, 1);
+    assert_eq!(milestone.user, user);
+    assert_eq!(milestone.milestone_percentage, 50);
+}
+
+#[test]
+#[should_panic]
+fn test_milestone_empty_batch() {
+    let (env, _admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    let milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+
+    client.batch_mark_milestones(&user, &milestone_requests);
+}
+
+#[test]
+#[should_panic]
+fn test_milestone_batch_too_large() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Create a goal
+    let mut goal_requests: Vec<SavingsGoalRequest> = Vec::new(&env);
+    goal_requests.push_back(create_valid_request(&env, &user, "savings", 100_000_000));
+    client.batch_set_savings_goals(&admin, &goal_requests);
+
+    // Create batch exceeding MAX_BATCH_SIZE
+    let mut milestone_requests: Vec<MilestoneAchievementRequest> = Vec::new(&env);
+    for i in 0..=100 {
+        milestone_requests.push_back(MilestoneAchievementRequest {
+            goal_id: 1,
+            user: user.clone(),
+            milestone_percentage: ((i % 100) + 1) as u32,
+            achieved_at: env.ledger().sequence() as u64,
+        });
+    }
+
+    client.batch_mark_milestones(&user, &milestone_requests);
 }

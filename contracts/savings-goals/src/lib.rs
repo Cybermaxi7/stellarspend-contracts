@@ -1,15 +1,17 @@
 //! # Savings Goals Contract
 //!
 //! A Soroban smart contract for managing batch savings goal creation
-//! for multiple users simultaneously.
+//! and batch milestone achievement tracking for multiple users simultaneously.
 //!
 //! ## Features
 //!
 //! - **Batch Processing**: Efficiently create savings goals for multiple users in a single call
-//! - **Comprehensive Validation**: Validates goal amounts, deadlines, and initial contributions
-//! - **Event Emission**: Emits events for goal creation and batch processing
+//! - **Batch Milestones**: Mark milestones achieved for multiple goals in a single call
+//! - **Comprehensive Validation**: Validates goal amounts, deadlines, and milestone percentages
+//! - **Event Emission**: Emits events for goal creation, milestone achievements, and batch processing
 //! - **Error Handling**: Gracefully handles invalid inputs with detailed error codes
 //! - **Optimized Storage**: Minimizes storage writes by batching operations
+//! - **Partial Failure Support**: Batch operations continue even if some individual operations fail
 //!
 //! ## Optimization Strategies
 //!
@@ -26,10 +28,11 @@ mod validation;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
 
 pub use crate::types::{
-    BatchGoalMetrics, BatchGoalResult, DataKey, ErrorCode, GoalEvents, GoalResult, SavingsGoal,
-    SavingsGoalRequest, MAX_BATCH_SIZE,
+    BatchGoalMetrics, BatchGoalResult, BatchMilestoneMetrics, BatchMilestoneResult, DataKey,
+    ErrorCode, GoalEvents, GoalResult, MilestoneAchievement, MilestoneAchievementRequest,
+    MilestoneResult, SavingsGoal, SavingsGoalRequest, MAX_BATCH_SIZE,
 };
-use crate::validation::validate_goal_request;
+use crate::validation::{validate_goal_request, validate_milestone_request};
 
 /// Error codes for the savings goals contract.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -281,6 +284,203 @@ impl SavingsGoalsContract {
         }
     }
 
+    /// Marks milestones achieved for multiple goals in a batch.
+    ///
+    /// This function processes milestone achievements with full support for partial failures.
+    /// If one milestone fails validation, processing continues for the remaining milestones.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `caller` - The address calling this function (must be the goal owner)
+    /// * `requests` - Vector of milestone achievement requests
+    ///
+    /// # Returns
+    /// * `BatchMilestoneResult` - Result containing achieved milestones and metrics
+    ///
+    /// # Events Emitted
+    /// * `milestone_batch_started` - When processing begins
+    /// * `milestone_achieved` - For each successful milestone
+    /// * `milestone_achievement_failed` - For each failed milestone
+    /// * `milestone_batch_completed` - When processing completes
+    ///
+    /// # Errors
+    /// * `EmptyBatch` - If no requests provided
+    /// * `BatchTooLarge` - If batch exceeds maximum size
+    pub fn batch_mark_milestones(
+        env: Env,
+        caller: Address,
+        requests: Vec<MilestoneAchievementRequest>,
+    ) -> BatchMilestoneResult {
+        // Verify caller authorization
+        caller.require_auth();
+
+        // Validate batch size
+        let request_count = requests.len();
+        if request_count == 0 {
+            panic_with_error!(&env, SavingsGoalError::EmptyBatch);
+        }
+        if request_count > MAX_BATCH_SIZE {
+            panic_with_error!(&env, SavingsGoalError::BatchTooLarge);
+        }
+
+        // Get batch ID and increment
+        let batch_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::LastBatchId)
+            .unwrap_or(0)
+            + 1;
+
+        // Emit batch started event
+        GoalEvents::milestone_batch_started(&env, batch_id, request_count);
+
+        // Get current ledger timestamp
+        let current_ledger = env.ledger().sequence() as u64;
+
+        // Initialize result tracking
+        let mut results: Vec<MilestoneResult> = Vec::new(&env);
+        let mut successful_count: u32 = 0;
+        let mut failed_count: u32 = 0;
+        let mut total_percentage_points: u32 = 0;
+        let mut milestone_id_counter: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::LastMilestoneId)
+            .unwrap_or(0);
+
+        // Process each milestone request
+        for request in requests.iter() {
+            // Verify caller is the goal owner
+            if request.user != caller {
+                failed_count += 1;
+                GoalEvents::milestone_achievement_failed(
+                    &env,
+                    batch_id,
+                    request.goal_id,
+                    ErrorCode::UNAUTHORIZED_USER,
+                );
+                results.push_back(MilestoneResult::Failure(
+                    request.goal_id,
+                    ErrorCode::UNAUTHORIZED_USER,
+                ));
+                continue;
+            }
+
+            // Validate the milestone request
+            match validate_milestone_request(&env, &request) {
+                Ok(()) => {
+                    // Validation succeeded - create the milestone
+                    milestone_id_counter += 1;
+
+                    // Get goal to capture current amount
+                    let goal: SavingsGoal = env
+                        .storage()
+                        .persistent()
+                        .get(&DataKey::Goal(request.goal_id))
+                        .expect("Goal should exist after validation");
+
+                    let milestone = MilestoneAchievement {
+                        milestone_id: milestone_id_counter,
+                        goal_id: request.goal_id,
+                        user: request.user.clone(),
+                        milestone_percentage: request.milestone_percentage,
+                        goal_amount_at_achievement: goal.current_amount,
+                        achieved_at: current_ledger,
+                    };
+
+                    // Accumulate metrics
+                    total_percentage_points = total_percentage_points
+                        .checked_add(request.milestone_percentage)
+                        .unwrap_or(u32::MAX);
+                    successful_count += 1;
+
+                    // Store the milestone (optimized - one write per milestone)
+                    env.storage()
+                        .persistent()
+                        .set(&DataKey::Milestone(milestone_id_counter), &milestone);
+
+                    // Update goal's milestone list
+                    let mut goal_milestones: Vec<u64> = env
+                        .storage()
+                        .persistent()
+                        .get(&DataKey::GoalMilestones(request.goal_id))
+                        .unwrap_or(Vec::new(&env));
+                    goal_milestones.push_back(milestone_id_counter);
+                    env.storage()
+                        .persistent()
+                        .set(&DataKey::GoalMilestones(request.goal_id), &goal_milestones);
+
+                    // Emit success event
+                    GoalEvents::milestone_achieved(&env, batch_id, &milestone);
+
+                    results.push_back(MilestoneResult::Success(milestone));
+                }
+                Err(error_code) => {
+                    // Validation failed - record failure and continue
+                    failed_count += 1;
+
+                    // Emit failure event
+                    GoalEvents::milestone_achievement_failed(&env, batch_id, request.goal_id, error_code);
+
+                    results.push_back(MilestoneResult::Failure(request.goal_id, error_code));
+                }
+            }
+        }
+
+        // Calculate average milestone percentage
+        let avg_percentage = if successful_count > 0 {
+            total_percentage_points / successful_count
+        } else {
+            0
+        };
+
+        // Create metrics
+        let metrics = BatchMilestoneMetrics {
+            total_requests: request_count,
+            successful_milestones: successful_count,
+            failed_milestones: failed_count,
+            total_percentage_points,
+            avg_percentage,
+            processed_at: current_ledger,
+        };
+
+        // Update storage (batched at the end for efficiency)
+        let total_milestones: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalMilestonesAchieved)
+            .unwrap_or(0);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::LastBatchId, &batch_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::LastMilestoneId, &milestone_id_counter);
+        env.storage().instance().set(
+            &DataKey::TotalMilestonesAchieved,
+            &(total_milestones + successful_count as u64),
+        );
+
+        // Emit batch completed event
+        GoalEvents::milestone_batch_completed(
+            &env,
+            batch_id,
+            successful_count,
+            failed_count,
+            total_percentage_points,
+        );
+
+        BatchMilestoneResult {
+            batch_id,
+            total_requests: request_count,
+            successful: successful_count,
+            failed: failed_count,
+            results,
+            metrics,
+        }
+    }
+
     /// Retrieves a savings goal by ID.
     ///
     /// # Arguments
@@ -353,6 +553,51 @@ impl SavingsGoalsContract {
         env.storage()
             .instance()
             .get(&DataKey::TotalBatchesProcessed)
+            .unwrap_or(0)
+    }
+
+    /// Retrieves a milestone by ID.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `milestone_id` - The ID of the milestone to retrieve
+    ///
+    /// # Returns
+    /// * `Option<MilestoneAchievement>` - The milestone if found
+    pub fn get_milestone(env: Env, milestone_id: u64) -> Option<MilestoneAchievement> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(milestone_id))
+    }
+
+    /// Retrieves all milestone IDs for a specific goal.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `goal_id` - The goal ID
+    ///
+    /// # Returns
+    /// * `Vec<u64>` - Vector of milestone IDs for the goal
+    pub fn get_goal_milestones(env: Env, goal_id: u64) -> Vec<u64> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::GoalMilestones(goal_id))
+            .unwrap_or(Vec::new(&env))
+    }
+
+    /// Returns the last created milestone ID.
+    pub fn get_last_milestone_id(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::LastMilestoneId)
+            .unwrap_or(0)
+    }
+
+    /// Returns the total number of milestones achieved.
+    pub fn get_total_milestones_achieved(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalMilestonesAchieved)
             .unwrap_or(0)
     }
 

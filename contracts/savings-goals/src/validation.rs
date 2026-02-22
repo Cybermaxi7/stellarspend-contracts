@@ -2,7 +2,7 @@
 
 use soroban_sdk::{Address, Env};
 
-use crate::types::{ErrorCode, SavingsGoalRequest, MAX_GOAL_AMOUNT, MIN_GOAL_AMOUNT};
+use crate::types::{DataKey, ErrorCode, MilestoneAchievementRequest, SavingsGoal, SavingsGoalRequest, MAX_GOAL_AMOUNT, MIN_GOAL_AMOUNT};
 
 /// Validates a savings goal request.
 ///
@@ -124,6 +124,76 @@ pub fn validate_batch(requests: &soroban_sdk::Vec<SavingsGoalRequest>) -> Result
     // Basic structural validation
     // Individual validation happens during processing
     Ok(())
+}
+
+/// Validates a milestone achievement request.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `request` - The milestone achievement request
+///
+/// # Returns
+/// * `Ok(())` if valid
+/// * `Err(error_code)` if invalid
+pub fn validate_milestone_request(env: &Env, request: &MilestoneAchievementRequest) -> Result<(), u32> {
+    // Validate milestone percentage (must be 1-100)
+    if request.milestone_percentage < 1 || request.milestone_percentage > 100 {
+        return Err(ErrorCode::INVALID_MILESTONE_PERCENTAGE);
+    }
+
+    // Verify goal exists
+    let goal: Option<SavingsGoal> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Goal(request.goal_id));
+    
+    if goal.is_none() {
+        return Err(ErrorCode::GOAL_NOT_FOUND);
+    }
+
+    let goal = goal.unwrap();
+
+    // Verify goal is active
+    if !goal.is_active {
+        return Err(ErrorCode::GOAL_NOT_ACTIVE);
+    }
+
+    // Verify user is the goal owner
+    if goal.user != request.user {
+        return Err(ErrorCode::UNAUTHORIZED_USER);
+    }
+
+    // Verify milestone hasn't already been achieved
+    if let Some(milestones) = env
+        .storage()
+        .persistent()
+        .get::<_, soroban_sdk::Vec<u64>>(&DataKey::GoalMilestones(request.goal_id))
+    {
+        for milestone_id in milestones.iter() {
+            if let Some(milestone) = env
+                .storage()
+                .persistent()
+                .get::<_, crate::types::MilestoneAchievement>(&DataKey::Milestone(milestone_id))
+            {
+                if milestone.milestone_percentage == request.milestone_percentage {
+                    return Err(ErrorCode::MILESTONE_ALREADY_ACHIEVED);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates milestone percentage is in valid range.
+///
+/// # Arguments
+/// * `percentage` - The milestone percentage
+///
+/// # Returns
+/// * `true` if percentage is 1-100
+pub fn is_valid_milestone_percentage(percentage: u32) -> bool {
+    percentage >= 1 && percentage <= 100
 }
 
 #[cfg(test)]
