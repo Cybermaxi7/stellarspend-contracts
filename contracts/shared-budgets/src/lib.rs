@@ -1,20 +1,19 @@
-//! # Shared Budgets Contract
-//! Batch allocation of a caller's balance (shared budget) to multiple recipients.
-
 #![no_std]
 
 mod types;
 mod validation;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, panic_with_error, token, Address, Env, Vec, Symbol,
+};
 
 pub use crate::types::{
-    AllocationBatchResult, AllocationRequest, AllocationResult, DataKey, SharedBudgetEvents,
-    MAX_BATCH_SIZE,
+    Budget, BudgetContribution, BudgetSpendingRule, DataKey, SharedBudgetEvents,
+    MAX_BUDGET_MEMBERS, MAX_SPENDING_RULES,
 };
-use crate::validation::{validate_address, validate_amount};
+use crate::validation::{validate_amount, validate_percentage};
 
-/// Error codes for the shared budgets contract.
+/// Error codes for the shared budget contract.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum SharedBudgetError {
@@ -22,10 +21,28 @@ pub enum SharedBudgetError {
     NotInitialized = 1,
     /// Caller is not authorized
     Unauthorized = 2,
-    /// Batch is empty
-    EmptyBatch = 3,
-    /// Batch exceeds maximum size
-    BatchTooLarge = 4,
+    /// Budget does not exist
+    BudgetNotFound = 3,
+    /// Member already exists in budget
+    MemberAlreadyExists = 4,
+    /// Member not found in budget
+    MemberNotFound = 5,
+    /// Spending rule not found
+    RuleNotFound = 6,
+    /// Invalid amount
+    InvalidAmount = 7,
+    /// Insufficient balance
+    InsufficientBalance = 8,
+    /// Invalid percentage value
+    InvalidPercentage = 9,
+    /// Budget is already active
+    BudgetAlreadyActive = 10,
+    /// Budget is not active
+    BudgetNotActive = 11,
+    /// Too many members in budget
+    TooManyMembers = 12,
+    /// Too many spending rules
+    TooManyRules = 13,
 }
 
 impl From<SharedBudgetError> for soroban_sdk::Error {
@@ -46,181 +63,333 @@ impl SharedBudgetContract {
         }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::TotalBatches, &0u64);
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalAllocationsProcessed, &0u64);
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalAllocatedVolume, &0i128);
+        env.storage().instance().set(&DataKey::TotalBudgetsCreated, &0u64);
+        env.storage().instance().set(&DataKey::TotalContributionsProcessed, &0u64);
     }
 
-    /// Allocates a shared budget (caller balance) to multiple recipients in batch.
-    /// Performs per-recipient validation and supports partial failures. The caller
-    /// must be the configured admin and the source of funds.
-    pub fn allocate_shared_budget_batch(
+    /// Creates a new shared budget with specified members and spending rules.
+    pub fn create_budget(
         env: Env,
-        caller: Address,
-        _token: Address,
-        allocations: Vec<AllocationRequest>,
-    ) -> AllocationBatchResult {
-        // Verify authorization
-        caller.require_auth();
-        Self::require_admin(&env, &caller);
+        creator: Address,
+        budget_name: Symbol,
+        members: Vec<Address>,
+        token: Address,
+        spending_rules: Vec<BudgetSpendingRule>,
+    ) -> u64 {
+        creator.require_auth();
 
-        // Validate batch size
-        let request_count = allocations.len();
-        if request_count == 0 {
-            panic_with_error!(&env, SharedBudgetError::EmptyBatch);
-        }
-        if request_count > MAX_BATCH_SIZE {
-            panic_with_error!(&env, SharedBudgetError::BatchTooLarge);
+        // Validate member count
+        if members.len() as u32 > MAX_BUDGET_MEMBERS {
+            panic_with_error!(&env, SharedBudgetError::TooManyMembers);
         }
 
-        // Get batch ID and increment
-        let batch_id: u64 = env
+        // Validate spending rules count
+        if spending_rules.len() as u32 > MAX_SPENDING_RULES {
+            panic_with_error!(&env, SharedBudgetError::TooManyRules);
+        }
+
+        // Validate spending rules
+        for rule in spending_rules.iter() {
+            validate_percentage(rule.percentage_threshold).unwrap_or_else(|_| {
+                panic_with_error!(&env, SharedBudgetError::InvalidPercentage);
+            });
+        }
+
+        // Get next budget ID and increment counter
+        let budget_id: u64 = env
             .storage()
             .instance()
-            .get(&DataKey::TotalBatches)
+            .get(&DataKey::TotalBudgetsCreated)
             .unwrap_or(0)
             + 1;
 
-        // Emit batch started event
-        SharedBudgetEvents::batch_started(&env, batch_id, request_count);
+        // Create budget structure
+        let budget = Budget {
+            id: budget_id,
+            name: budget_name,
+            creator: creator.clone(),
+            token: token.clone(),
+            members: members.clone(),
+            balance: 0,
+            total_contributed: 0,
+            spending_rules: spending_rules.clone(),
+            is_active: true,
+            created_at: env.ledger().timestamp(),
+        };
 
-        // Initialize result vectors and counters
-        let mut results: Vec<AllocationResult> = Vec::new(&env);
-        let mut successful_count: u32 = 0;
-        let mut failed_count: u32 = 0;
-        let mut total_allocated: i128 = 0;
+        // Store the budget
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
 
-        // First pass: validate requests and build an internal list
-        let mut validated_requests: Vec<(AllocationRequest, bool, u32)> = Vec::new(&env);
-
-        for request in allocations.iter() {
-            let mut is_valid = true;
-            let mut error_code = 0u32;
-
-            if validate_address(&env, &request.recipient).is_err() {
-                is_valid = false;
-                error_code = 0; // Invalid address
-            } else if validate_amount(request.amount).is_err() {
-                is_valid = false;
-                error_code = 1; // Invalid amount
-            }
-
-            validated_requests.push_back((request.clone(), is_valid, error_code));
-        }
-
-        // Second pass: process each allocation
-        for (request, is_valid, error_code) in validated_requests.iter() {
-            if !is_valid {
-                // Validation failed - record and continue
-                results.push_back(AllocationResult::Failure(
-                    request.recipient.clone(),
-                    request.amount,
-                    error_code.clone(),
-                ));
-                failed_count += 1;
-                SharedBudgetEvents::allocation_failure(
-                    &env,
-                    batch_id,
-                    &request.recipient,
-                    request.amount,
-                    error_code.clone(),
-                );
-                continue;
-            }
-
-            // Simulate insufficient shared budget for very large amounts.
-            // This avoids relying on real token balances while still
-            // exercising partial failure behavior.
-            const MAX_SIMULATED_SHARED_BUDGET: i128 = 1_000_000_000_000; // 1e12
-            if request.amount > MAX_SIMULATED_SHARED_BUDGET {
-                results.push_back(AllocationResult::Failure(
-                    request.recipient.clone(),
-                    request.amount,
-                    2, // Simulated insufficient shared budget
-                ));
-                failed_count += 1;
-                SharedBudgetEvents::allocation_failure(
-                    &env,
-                    batch_id,
-                    &request.recipient,
-                    request.amount,
-                    2,
-                );
-                continue;
-            }
-
-            // Allocation succeeded (we only validate inputs; no on-chain transfer here)
-            total_allocated = total_allocated
-                .checked_add(request.amount)
-                .unwrap_or(total_allocated);
-
-            results.push_back(AllocationResult::Success(
-                request.recipient.clone(),
-                request.amount,
-            ));
-            successful_count += 1;
-
-            SharedBudgetEvents::allocation_success(
-                &env,
-                batch_id,
-                &request.recipient,
-                request.amount,
-            );
-        }
-
-        // Update storage (batched at the end for efficiency)
-        let total_batches: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalBatches)
-            .unwrap_or(0);
-        let total_processed: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalAllocationsProcessed)
-            .unwrap_or(0);
-        let total_volume: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalAllocatedVolume)
-            .unwrap_or(0);
-
+        // Update counter
         env.storage()
             .instance()
-            .set(&DataKey::TotalBatches, &(total_batches + 1));
+            .set(&DataKey::TotalBudgetsCreated, &budget_id);
+
+        // Add members to budget
+        for member in members.iter() {
+            env.storage()
+                .persistent()
+                .set(&DataKey::BudgetMember(budget_id, member.clone()), &true);
+        }
+
+        // Emit event
+        SharedBudgetEvents::budget_created(&env, budget_id, &creator, &members, &token);
+
+        budget_id
+    }
+
+    /// Contributes to a shared budget.
+    pub fn contribute_to_budget(
+        env: Env,
+        contributor: Address,
+        budget_id: u64,
+        amount: i128,
+    ) {
+        contributor.require_auth();
+
+        // Validate amount
+        validate_amount(amount).unwrap_or_else(|_| {
+            panic_with_error!(&env, SharedBudgetError::InvalidAmount);
+        });
+
+        // Load budget
+        let mut budget: Budget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound));
+
+        if !budget.is_active {
+            panic_with_error!(&env, SharedBudgetError::BudgetNotActive);
+        }
+
+        // Transfer tokens from contributor to contract
+        let token_client = token::Client::new(&env, &budget.token);
+        token_client.transfer(&contributor, &env.current_contract_address(), &amount);
+
+        // Update budget balance and contribution tracking
+        budget.balance += amount;
+        budget.total_contributed += amount;
+
+        // Store updated budget
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
+
+        // Track contribution
+        let contribution = BudgetContribution {
+            budget_id,
+            contributor: contributor.clone(),
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        // Get next contribution ID
+        let contribution_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalContributionsProcessed)
+            .unwrap_or(0)
+            + 1;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Contribution(contribution_id), &contribution);
         env.storage()
             .instance()
-            .set(
-                &DataKey::TotalAllocationsProcessed,
-                &(total_processed + request_count as u64),
-            );
-        env.storage().instance().set(
-            &DataKey::TotalAllocatedVolume,
-            &total_allocated
-                .checked_add(total_volume)
-                .unwrap_or(total_volume),
-        );
+            .set(&DataKey::TotalContributionsProcessed, &contribution_id);
 
-        // Emit batch completed event
-        SharedBudgetEvents::batch_completed(
-            &env,
-            batch_id,
-            successful_count,
-            failed_count,
-            total_allocated,
-        );
+        // Emit event
+        SharedBudgetEvents::contribution_added(&env, budget_id, &contributor, amount);
+    }
 
-        AllocationBatchResult {
-            total_requests: request_count,
-            successful: successful_count,
-            failed: failed_count,
-            total_allocated,
-            results,
+    /// Spend from a shared budget with spending rule enforcement.
+    pub fn spend_from_budget(
+        env: Env,
+        spender: Address,
+        budget_id: u64,
+        recipient: Address,
+        amount: i128,
+    ) {
+        spender.require_auth();
+
+        // Validate amount
+        validate_amount(amount).unwrap_or_else(|_| {
+            panic_with_error!(&env, SharedBudgetError::InvalidAmount);
+        });
+
+        // Load budget
+        let mut budget: Budget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound));
+
+        if !budget.is_active {
+            panic_with_error!(&env, SharedBudgetError::BudgetNotActive);
         }
+
+        // Check if spender is a member of the budget
+        let is_member = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BudgetMember(budget_id, spender.clone()))
+            .unwrap_or(false);
+
+        if !is_member {
+            panic_with_error!(&env, SharedBudgetError::MemberNotFound);
+        }
+
+        // Check if budget has sufficient balance
+        if budget.balance < amount {
+            panic_with_error!(&env, SharedBudgetError::InsufficientBalance);
+        }
+
+        // Enforce spending rules
+        Self::enforce_spending_rules(&env, &budget, &spender, amount);
+
+        // Transfer tokens from contract to recipient
+        let token_client = token::Client::new(&env, &budget.token);
+        token_client.transfer(&env.current_contract_address(), &recipient, &amount);
+
+        // Update budget balance
+        budget.balance -= amount;
+
+        // Store updated budget
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
+
+        // Emit event
+        SharedBudgetEvents::expense_incurred(&env, budget_id, &spender, &recipient, amount);
+    }
+
+    /// Add a member to an existing budget.
+    pub fn add_member_to_budget(
+        env: Env,
+        caller: Address,
+        budget_id: u64,
+        new_member: Address,
+    ) {
+        caller.require_auth();
+
+        // Load budget
+        let mut budget: Budget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound));
+
+        // Only creators or admins can add members
+        if caller != budget.creator {
+            Self::require_admin(&env, &caller);
+        }
+
+        // Check if member already exists
+        let member_exists = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BudgetMember(budget_id, new_member.clone()))
+            .unwrap_or(false);
+
+        if member_exists {
+            panic_with_error!(&env, SharedBudgetError::MemberAlreadyExists);
+        }
+
+        // Check member limit
+        let mut member_count = 0u32;
+        for member in budget.members.iter() {
+            member_count += 1;
+        }
+
+        if member_count >= MAX_BUDGET_MEMBERS {
+            panic_with_error!(&env, SharedBudgetError::TooManyMembers);
+        }
+
+        // Add member to budget
+        budget.members.push_back(new_member.clone());
+
+        // Store updated budget
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
+
+        // Mark as member
+        env.storage()
+            .persistent()
+            .set(&DataKey::BudgetMember(budget_id, new_member.clone()), &true);
+
+        // Emit event
+        SharedBudgetEvents::member_added(&env, budget_id, &new_member);
+    }
+
+    /// Add a spending rule to a budget.
+    pub fn add_spending_rule(
+        env: Env,
+        caller: Address,
+        budget_id: u64,
+        rule: BudgetSpendingRule,
+    ) {
+        caller.require_auth();
+
+        // Validate rule percentage
+        validate_percentage(rule.percentage_threshold).unwrap_or_else(|_| {
+            panic_with_error!(&env, SharedBudgetError::InvalidPercentage);
+        });
+
+        // Load budget
+        let mut budget: Budget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound));
+
+        // Only creators or admins can add rules
+        if caller != budget.creator {
+            Self::require_admin(&env, &caller);
+        }
+
+        // Check rule limit
+        if budget.spending_rules.len() as u32 >= MAX_SPENDING_RULES {
+            panic_with_error!(&env, SharedBudgetError::TooManyRules);
+        }
+
+        // Emit event first before modifying the budget
+        SharedBudgetEvents::spending_rule_added(&env, budget_id, &rule);
+
+        // Add rule to budget
+        budget.spending_rules.push_back(rule);
+
+        // Store updated budget
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
+    }
+
+    /// Get budget details.
+    pub fn get_budget(env: Env, budget_id: u64) -> Budget {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound))
+    }
+
+    /// Get member status for a budget.
+    pub fn is_budget_member(env: Env, budget_id: u64, member: Address) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::BudgetMember(budget_id, member))
+            .unwrap_or(false)
+    }
+
+    /// Get contribution details.
+    pub fn get_contribution(env: Env, contribution_id: u64) -> BudgetContribution {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Contribution(contribution_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::RuleNotFound)) // Using RuleNotFound as a generic error
     }
 
     /// Returns the admin address.
@@ -239,28 +408,39 @@ impl SharedBudgetContract {
         env.storage().instance().set(&DataKey::Admin, &new_admin);
     }
 
-    /// Returns the total number of batches processed.
-    pub fn get_total_batches(env: Env) -> u64 {
+    /// Returns the total number of budgets created.
+    pub fn get_total_budgets_created(env: Env) -> u64 {
         env.storage()
             .instance()
-            .get(&DataKey::TotalBatches)
+            .get(&DataKey::TotalBudgetsCreated)
             .unwrap_or(0)
     }
 
-    /// Returns the total number of allocation entries processed.
-    pub fn get_total_allocations_processed(env: Env) -> u64 {
+    /// Returns the total number of contributions processed.
+    pub fn get_total_contribs_processed(env: Env) -> u64 {
         env.storage()
             .instance()
-            .get(&DataKey::TotalAllocationsProcessed)
+            .get(&DataKey::TotalContributionsProcessed)
             .unwrap_or(0)
     }
 
-    /// Returns the total volume allocated across all batches.
-    pub fn get_total_allocated_volume(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::TotalAllocatedVolume)
-            .unwrap_or(0)
+    // Internal helper to enforce spending rules
+    fn enforce_spending_rules(env: &Env, budget: &Budget, spender: &Address, amount: i128) {
+        // Check each spending rule to see if it applies
+        for rule in budget.spending_rules.iter() {
+            // If this rule applies to the spender and the amount exceeds threshold
+            if rule.applicable_to == *spender { // Check if rule applies to this specific spender
+                let threshold_amount = if budget.total_contributed > 0 {
+                    (budget.total_contributed as f64 * (rule.percentage_threshold as f64 / 100.0)) as i128
+                } else {
+                    0 // If no contributions yet, threshold is 0
+                };
+                
+                if amount > threshold_amount && !rule.requires_approval {
+                    panic_with_error!(env, SharedBudgetError::Unauthorized);
+                }
+            }
+        }
     }
 
     // Internal helper to verify admin

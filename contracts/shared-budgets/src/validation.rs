@@ -1,19 +1,19 @@
-// Validation helpers for shared budget allocations.
+// Validation helpers for shared budget operations.
 
 use soroban_sdk::{Address, Env};
 
-/// Validates a recipient address.
-/// For now, this simply ensures the address is not the zero-equivalent.
-pub fn validate_address(env: &Env, address: &Address) -> Result<(), &'static str> {
-    let _ = env;
-    let _ = address;
-    Ok(())
-}
-
-/// Validates an allocation amount.
+/// Validates an amount.
 pub fn validate_amount(amount: i128) -> Result<(), &'static str> {
     if amount <= 0 {
         return Err("invalid_amount");
+    }
+    Ok(())
+}
+
+/// Validates a percentage value (0-100).
+pub fn validate_percentage(percentage: u32) -> Result<(), &'static str> {
+    if percentage > 100 {
+        return Err("invalid_percentage");
     }
     Ok(())
 }
