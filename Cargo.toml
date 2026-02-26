@@ -20,6 +20,7 @@ members = [
     "contracts/escrow",
     "contracts/budget-allocation",
     "contracts/batch-token-mint",
+    "contracts/asset_control",
 ]
 
 [workspace.package]
