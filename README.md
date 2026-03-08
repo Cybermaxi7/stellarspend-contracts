@@ -1,3 +1,4 @@
+[![CI Status](https://github.com/stellarspend/stellarspend-contracts/actions/workflows/contract-ci.yml/badge.svg)](https://github.com/stellarspend/stellarspend-contracts/actions/workflows/contract-ci.yml)
 # stellarspend-contracts
 Soroban smart contracts for automated budgets, savings goals, and spending limits on Stellar
 Smart contracts powering StellarSpend financial logic on the Stellar blockchain using Soroban.
