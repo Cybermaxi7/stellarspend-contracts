@@ -35,3 +35,22 @@ pub fn validate_windows(windows: &[FeeWindow]) -> bool {
     }
     true
 }
+
+use soroban_sdk::{Env, contractimpl};
+use crate::fee::{FeeConfig, calculate_fee};
+
+pub struct FeeContract;
+
+#[contractimpl]
+impl FeeContract {
+    pub fn simulate_fee(env: Env, amount: i128, user: soroban_sdk::Address) -> i128 {
+        // Read-only: fetch config, calculate fee, return estimate
+        let config: FeeConfig = env.storage().persistent().get(&"fee_config").unwrap();
+        calculate_fee(&env, amount, &config)
+    }
+
+    pub fn get_fee(env: Env, amount: i128) -> i128 {
+        let config: FeeConfig = env.storage().persistent().get(&"fee_config").unwrap();
+        calculate_fee(&env, amount, &config)
+    }
+}
