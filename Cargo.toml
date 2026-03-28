@@ -22,6 +22,7 @@ members = [
     "contracts/recurring-payment",
     "contracts/batch-token-mint",
     "contracts/asset_control",
+    "contracts/access-control",
 ]
 
 [package]

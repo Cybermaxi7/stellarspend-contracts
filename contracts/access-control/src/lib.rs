@@ -184,6 +184,22 @@ impl AccessControlContract {
         roles.get(role).unwrap_or(false)
     }
 
+    /// Check permissions for an action (generic gate)
+    pub fn check_permission(env: Env, user: Address, role: Role) {
+        let roles: Map<Role, bool> = env
+            .storage()
+            .instance()
+            .get(&DataKey::UserRoles(user.clone()))
+            .unwrap_or(Map::new(&env));
+
+        let is_admin = roles.get(Role::Admin).unwrap_or(false);
+        let has_role = roles.get(role).unwrap_or(false);
+
+        if !is_admin && !has_role {
+            panic_with_error!(&env, AccessControlError::Unauthorized);
+        }
+    }
+
     /// Get all roles for a user
     pub fn get_user_roles(env: Env, user: Address) -> Map<Role, bool> {
         env.storage()
@@ -244,7 +260,6 @@ impl AccessControlContract {
             .get(&DataKey::TotalRoleAssignments)
             .unwrap_or(0)
     }
-
 }
 
 impl AccessControlContract {
@@ -256,35 +271,6 @@ impl AccessControlContract {
             .get(&DataKey::Admin)
             .unwrap_or_else(|| panic_with_error!(env, AccessControlError::NotInitialized));
         if caller != &admin {
-            panic_with_error!(env, AccessControlError::Unauthorized);
-        }
-    }
-
-    /// Internal helper: Require that the caller has a specific role
-    fn require_role(env: &Env, caller: &Address, role: Role) {
-        let roles: Map<Role, bool> = env
-            .storage()
-            .instance()
-            .get(&DataKey::UserRoles(caller.clone()))
-            .unwrap_or(Map::new(env));
-
-        if !roles.get(role).unwrap_or(false) {
-            panic_with_error!(env, AccessControlError::Unauthorized);
-        }
-    }
-
-    /// Internal helper: Require that the caller has admin OR a specific role
-    fn require_admin_or_role(env: &Env, caller: &Address, role: Role) {
-        let roles: Map<Role, bool> = env
-            .storage()
-            .instance()
-            .get(&DataKey::UserRoles(caller.clone()))
-            .unwrap_or(Map::new(env));
-
-        let is_admin = roles.get(Role::Admin).unwrap_or(false);
-        let has_role = roles.get(role).unwrap_or(false);
-
-        if !is_admin && !has_role {
             panic_with_error!(env, AccessControlError::Unauthorized);
         }
     }

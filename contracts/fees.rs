@@ -128,6 +128,10 @@ pub enum DataKey {
     MaxFee,
     /// Priority fee configuration with multipliers for each priority level.
     PriorityFeeConfig,
+    /// Fees currently held in escrow before being added to TotalFeesCollected.
+    EscrowedFees(Address),
+    /// Fee delegation mapping (User -> Delegate Payer).
+    FeeDelegate(Address),
 }
 
 #[contracterror]
@@ -158,6 +162,8 @@ pub enum FeeError {
     InvalidPriorityLevel = 14,
     /// Priority multiplier configuration is invalid (not in ascending order).
     InvalidPriorityConfig = 15,
+    /// No escrowed fees found for the user.
+    NoEscrowedFees = 14,
 }
 
 /// Events emitted by the fees contract.
@@ -251,6 +257,16 @@ impl FeeEvents {
                 priority.to_u32(),
                 env.ledger().timestamp(),
             ),
+    pub fn fee_escrowed(env: &Env, user: &Address, amount: i128) {
+        let topics = (symbol_short!("fee"), symbol_short!("escrowed"));
+        env.events().publish(topics, (user.clone(), amount, env.ledger().timestamp()));
+    }
+
+    pub fn fee_delegate_updated(env: &Env, user: &Address, delegate: &Address) {
+        let topics = (symbol_short!("fee"), symbol_short!("del_upd"));
+        env.events().publish(
+            topics,
+            (user.clone(), delegate.clone(), env.ledger().timestamp()),
         );
     }
 }
@@ -468,6 +484,17 @@ impl FeesContract {
             .checked_sub(fee)
             .unwrap_or_else(|| panic_with_error!(&env, FeeError::Overflow));
 
+        // [SEC-FEES-21] Delegation logic: use the configured delegate if it exists.
+        let actual_payer = if let Some(delegate) = env.storage().instance().get(&DataKey::FeeDelegate(payer.clone())) {
+            delegate
+        } else {
+            payer.clone()
+        };
+
+        if actual_payer != payer {
+             actual_payer.require_auth();
+        }
+
         let mut total: i128 = env
             .storage()
             .instance()
@@ -572,6 +599,47 @@ impl FeesContract {
 
         FeeEvents::fee_deducted_with_priority(&env, &payer, amount, fee, priority);
         (net, fee)
+    /// [ISSUE-206] Deduct fee and hold it in escrow.
+    pub fn deduct_fee_to_escrow(env: Env, payer: Address, amount: i128) -> (i128, i128) {
+        payer.require_auth();
+        Self::require_initialized(&env);
+
+        let fee = Self::calculate_fee(&env, amount);
+        let net = amount.checked_sub(fee).expect("Overflow");
+
+        let mut escrowed: i128 = env.storage().instance().get(&DataKey::EscrowedFees(payer.clone())).unwrap_or(0);
+        escrowed = escrowed.checked_add(fee).expect("Overflow");
+
+        env.storage().instance().set(&DataKey::EscrowedFees(payer.clone()), &escrowed);
+        FeeEvents::fee_escrowed(&env, &payer, fee);
+
+        (net, fee)
+    }
+
+    /// [ISSUE-206] Release escrowed fees to global collection.
+    pub fn release_escrow(env: Env, admin: Address, user: Address) {
+        admin.require_auth();
+        Self::require_admin(&env, &admin);
+
+        let escrowed: i128 = env.storage().instance().get(&DataKey::EscrowedFees(user.clone()))
+            .unwrap_or_else(|| panic_with_error!(&env, FeeError::NoEscrowedFees));
+
+        if escrowed == 0 {
+            panic_with_error!(&env, FeeError::NoEscrowedFees);
+        }
+
+        let mut total: i128 = env.storage().instance().get(&DataKey::TotalFeesCollected).unwrap_or(0);
+        total = total.checked_add(escrowed).expect("Overflow");
+
+        env.storage().instance().set(&DataKey::TotalFeesCollected, &total);
+        env.storage().instance().remove(&DataKey::EscrowedFees(user));
+    }
+
+    /// [ISSUE-203] Set a delegate for fee payments.
+    pub fn set_fee_delegate(env: Env, user: Address, delegate: Address) {
+        user.require_auth();
+        env.storage().instance().set(&DataKey::FeeDelegate(user.clone()), &delegate);
+        FeeEvents::fee_delegate_updated(&env, &user, &delegate);
     }
 
     /// Returns cumulative fees collected since deployment.
