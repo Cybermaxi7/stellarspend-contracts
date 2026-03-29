@@ -236,6 +236,15 @@ fn test_contract_initialization() {
     assert_eq!(priority_config.medium_multiplier_bps, 10000);
     assert_eq!(priority_config.high_multiplier_bps, 15000);
     assert_eq!(priority_config.urgent_multiplier_bps, 20000);
+
+    let events = env.events().all();
+    let event = events
+        .iter()
+        .rev()
+        .find(|e| e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("init"))
+        .expect("initialize event should be emitted");
+    assert_eq!(event.topics.2, admin.clone());
+    assert_eq!(event.topics.3, 500i128);
 }
 
 #[test]
@@ -380,6 +389,15 @@ fn test_deduct_fee_with_priority() {
     assert_eq!(net, 8500);
     assert_eq!(FeeContract::get_total_collected(env.clone()), 1500);
     assert_eq!(FeeContract::get_user_fees_accrued(env.clone(), payer.clone()), 1500);
+
+    let events = env.events().all();
+    let event = events
+        .iter()
+        .rev()
+        .find(|e| e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("deduct"))
+        .expect("deduction event should be emitted");
+    assert_eq!(event.topics.2, payer.clone());
+    assert_eq!(event.topics.3, amount);
 }
 
 #[test]
@@ -436,6 +454,13 @@ fn test_priority_fee_events() {
     let events = env.events().all();
     assert!(events.iter().any(|e| e.topics.0 == symbol_short!("fee") 
         && e.topics.1 == symbol_short!("pri_cfg")));
+    let event = events
+        .iter()
+        .rev()
+        .find(|e| e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("pri_cfg"))
+        .expect("priority config event should be emitted");
+    assert_eq!(event.topics.2, admin.clone());
+    assert_eq!(event.topics.3, 10000i128);
 }
 
 // =============================================================================
@@ -596,6 +621,15 @@ fn test_set_and_get_asset_fee_config() {
     assert_eq!(config.min_fee, 0);
     assert_eq!(config.max_fee, 0);
     assert_eq!(config.asset, asset);
+
+    let events = env.events().all();
+    let event = events
+        .iter()
+        .rev()
+        .find(|e| e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("ast_cfg"))
+        .expect("asset config event should be emitted");
+    assert_eq!(event.topics.2, admin.clone());
+    assert_eq!(event.topics.3, 200i128);
 }
 
 #[test]
@@ -732,6 +766,15 @@ fn test_deduct_asset_fee_tracks_balances_independently() {
 
     // Global total includes both
     assert_eq!(FeeContract::get_total_collected(env.clone()), 300);
+
+    let events = env.events().all();
+    let event = events
+        .iter()
+        .rev()
+        .find(|e| e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("ast_ded"))
+        .expect("asset deduction event should be emitted");
+    assert_eq!(event.topics.2, payer.clone());
+    assert_eq!(event.topics.3, 10_000i128);
 }
 
 #[test]
@@ -942,6 +985,25 @@ fn test_deduct_batch_fees_emits_batch_event() {
     assert!(events.iter().any(|e| {
         e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("batch")
     }));
+    assert!(events.iter().any(|e| {
+        e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("bat_itm")
+    }));
+
+    let item_event = events
+        .iter()
+        .rev()
+        .find(|e| e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("bat_itm"))
+        .expect("batch item event should be emitted");
+    assert_eq!(item_event.topics.2, payer.clone());
+    assert_eq!(item_event.topics.3, 10_000i128);
+
+    let summary_event = events
+        .iter()
+        .rev()
+        .find(|e| e.topics.0 == symbol_short!("fee") && e.topics.1 == symbol_short!("batch"))
+        .expect("batch summary event should be emitted");
+    assert_eq!(summary_event.topics.2, payer.clone());
+    assert_eq!(summary_event.topics.3, 200i128);
 }
 
 #[test]

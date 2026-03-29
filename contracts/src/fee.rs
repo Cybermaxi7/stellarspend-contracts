@@ -1,6 +1,6 @@
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
-    Env, Vec,
+    Env, Symbol, Vec,
 };
 
 // =============================================================================
@@ -235,22 +235,135 @@ pub enum FeeError {
 // Events
 // =============================================================================
 
+/// Standardized fee operation identifiers used in indexed event topics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum FeeOperationType {
+    Initialize = 0,
+    ConfigUpdate = 1,
+    PriorityConfigUpdate = 2,
+    BoundsUpdate = 3,
+    AssetConfigUpdate = 4,
+    FeeDeducted = 5,
+    AssetFeeDeducted = 6,
+    BatchFeeItem = 7,
+    BatchFeeSummary = 8,
+}
+
+impl FeeOperationType {
+    pub fn as_symbol(&self) -> Symbol {
+        match self {
+            FeeOperationType::Initialize => symbol_short!("init"),
+            FeeOperationType::ConfigUpdate => symbol_short!("cfg_upd"),
+            FeeOperationType::PriorityConfigUpdate => symbol_short!("pri_cfg"),
+            FeeOperationType::BoundsUpdate => symbol_short!("bnd_cfg"),
+            FeeOperationType::AssetConfigUpdate => symbol_short!("ast_cfg"),
+            FeeOperationType::FeeDeducted => symbol_short!("deduct"),
+            FeeOperationType::AssetFeeDeducted => symbol_short!("ast_ded"),
+            FeeOperationType::BatchFeeItem => symbol_short!("bat_itm"),
+            FeeOperationType::BatchFeeSummary => symbol_short!("batch"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct FeeConfigEvent {
+    pub admin: Address,
+    pub value: i128,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct PriorityConfigEvent {
+    pub admin: Address,
+    pub low_multiplier_bps: u32,
+    pub medium_multiplier_bps: u32,
+    pub high_multiplier_bps: u32,
+    pub urgent_multiplier_bps: u32,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct FeeBoundsEvent {
+    pub admin: Address,
+    pub min_fee: i128,
+    pub max_fee: i128,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct AssetFeeConfigEvent {
+    pub admin: Address,
+    pub asset: Address,
+    pub fee_rate: u32,
+    pub min_fee: i128,
+    pub max_fee: i128,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct FeeChargedEvent {
+    pub user: Address,
+    pub gross_amount: i128,
+    pub fee_amount: i128,
+    pub net_amount: i128,
+    pub priority: u32,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct AssetFeeChargedEvent {
+    pub user: Address,
+    pub asset: Address,
+    pub gross_amount: i128,
+    pub fee_amount: i128,
+    pub net_amount: i128,
+    pub priority: u32,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct BatchFeeSummaryEvent {
+    pub count: u32,
+    pub total_fees: i128,
+    pub timestamp: u64,
+}
+
 /// Events emitted by the fee contract.
 pub struct FeeEvents;
 
 impl FeeEvents {
+    fn indexed_topics(
+        operation: FeeOperationType,
+        user: &Address,
+        amount: i128,
+    ) -> (Symbol, Symbol, Address, i128) {
+        (symbol_short!("fee"), operation.as_symbol(), user.clone(), amount)
+    }
+
     pub fn priority_config_updated(env: &Env, admin: &Address, config: &PriorityFeeConfig) {
-        let topics = (symbol_short!("fee"), symbol_short!("pri_cfg"));
+        let topics = Self::indexed_topics(
+            FeeOperationType::PriorityConfigUpdate,
+            admin,
+            config.medium_multiplier_bps as i128,
+        );
         env.events().publish(
             topics,
-            (
-                admin.clone(),
-                config.low_multiplier_bps,
-                config.medium_multiplier_bps,
-                config.high_multiplier_bps,
-                config.urgent_multiplier_bps,
-                env.ledger().timestamp(),
-            ),
+            PriorityConfigEvent {
+                admin: admin.clone(),
+                low_multiplier_bps: config.low_multiplier_bps,
+                medium_multiplier_bps: config.medium_multiplier_bps,
+                high_multiplier_bps: config.high_multiplier_bps,
+                urgent_multiplier_bps: config.urgent_multiplier_bps,
+                timestamp: env.ledger().timestamp(),
+            },
         );
     }
 
@@ -261,22 +374,78 @@ impl FeeEvents {
         fee: i128,
         priority: PriorityLevel,
     ) {
-        let topics = (symbol_short!("fee"), symbol_short!("deducted"));
+        let net_amount = amount.saturating_sub(fee);
+        let topics = Self::indexed_topics(FeeOperationType::FeeDeducted, payer, amount);
         env.events().publish(
             topics,
-            (payer.clone(), amount, fee, priority.to_u32(), env.ledger().timestamp()),
+            FeeChargedEvent {
+                user: payer.clone(),
+                gross_amount: amount,
+                fee_amount: fee,
+                net_amount,
+                priority: priority.to_u32(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    pub fn initialized(env: &Env, admin: &Address, fee_rate: u32) {
+        let topics = Self::indexed_topics(FeeOperationType::Initialize, admin, fee_rate as i128);
+        env.events().publish(
+            topics,
+            FeeConfigEvent {
+                admin: admin.clone(),
+                value: fee_rate as i128,
+                timestamp: env.ledger().timestamp(),
+            },
         );
     }
 
     pub fn config_updated(env: &Env, admin: &Address, fee_rate: u32) {
-        let topics = (symbol_short!("fee"), symbol_short!("cfg_upd"));
-        env.events().publish(topics, (admin.clone(), fee_rate, env.ledger().timestamp()));
+        let topics = Self::indexed_topics(FeeOperationType::ConfigUpdate, admin, fee_rate as i128);
+        env.events().publish(
+            topics,
+            FeeConfigEvent {
+                admin: admin.clone(),
+                value: fee_rate as i128,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
-    pub fn asset_config_updated(env: &Env, admin: &Address, asset: &Address, fee_rate: u32) {
-        let topics = (symbol_short!("fee"), symbol_short!("ast_cfg"));
-        env.events()
-            .publish(topics, (admin.clone(), asset.clone(), fee_rate, env.ledger().timestamp()));
+    pub fn fee_bounds_updated(env: &Env, admin: &Address, min_fee: i128, max_fee: i128) {
+        let topics = Self::indexed_topics(FeeOperationType::BoundsUpdate, admin, max_fee);
+        env.events().publish(
+            topics,
+            FeeBoundsEvent {
+                admin: admin.clone(),
+                min_fee,
+                max_fee,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    pub fn asset_config_updated(
+        env: &Env,
+        admin: &Address,
+        asset: &Address,
+        fee_rate: u32,
+        min_fee: i128,
+        max_fee: i128,
+    ) {
+        let topics = Self::indexed_topics(FeeOperationType::AssetConfigUpdate, admin, fee_rate as i128);
+        env.events().publish(
+            topics,
+            AssetFeeConfigEvent {
+                admin: admin.clone(),
+                asset: asset.clone(),
+                fee_rate,
+                min_fee,
+                max_fee,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
     pub fn asset_fee_deducted(
@@ -287,17 +456,56 @@ impl FeeEvents {
         fee: i128,
         priority: PriorityLevel,
     ) {
-        let topics = (symbol_short!("fee"), symbol_short!("ast_ded"));
+        let net_amount = amount.saturating_sub(fee);
+        let topics = Self::indexed_topics(FeeOperationType::AssetFeeDeducted, payer, amount);
         env.events().publish(
             topics,
-            (payer.clone(), asset.clone(), amount, fee, priority.to_u32(), env.ledger().timestamp()),
+            AssetFeeChargedEvent {
+                user: payer.clone(),
+                asset: asset.clone(),
+                gross_amount: amount,
+                fee_amount: fee,
+                net_amount,
+                priority: priority.to_u32(),
+                timestamp: env.ledger().timestamp(),
+            },
         );
     }
 
-    pub fn batch_fees_deducted(env: &Env, count: u32, total_fees: i128) {
-        let topics = (symbol_short!("fee"), symbol_short!("batch"));
-        env.events()
-            .publish(topics, (count, total_fees, env.ledger().timestamp()));
+    pub fn batch_fee_item(
+        env: &Env,
+        payer: &Address,
+        asset: &Address,
+        amount: i128,
+        fee: i128,
+        priority: PriorityLevel,
+    ) {
+        let net_amount = amount.saturating_sub(fee);
+        let topics = Self::indexed_topics(FeeOperationType::BatchFeeItem, payer, amount);
+        env.events().publish(
+            topics,
+            AssetFeeChargedEvent {
+                user: payer.clone(),
+                asset: asset.clone(),
+                gross_amount: amount,
+                fee_amount: fee,
+                net_amount,
+                priority: priority.to_u32(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    pub fn batch_fees_deducted(env: &Env, indexed_user: &Address, count: u32, total_fees: i128) {
+        let topics = Self::indexed_topics(FeeOperationType::BatchFeeSummary, indexed_user, total_fees);
+        env.events().publish(
+            topics,
+            BatchFeeSummaryEvent {
+                count,
+                total_fees,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 }
 
@@ -453,7 +661,7 @@ impl FeeContract {
         };
         env.storage().instance().set(&DataKey::FeeConfig, &config);
 
-        FeeEvents::config_updated(&env, &admin, default_fee_rate);
+        FeeEvents::initialized(&env, &admin, default_fee_rate);
     }
 
     /// Set the priority fee multipliers.
@@ -647,6 +855,8 @@ impl FeeContract {
 
         env.storage().instance().set(&DataKey::MinFee, &min_fee);
         env.storage().instance().set(&DataKey::MaxFee, &max_fee);
+
+        FeeEvents::fee_bounds_updated(&env, &caller, min_fee, max_fee);
     }
 
     /// Get minimum fee.
@@ -727,7 +937,7 @@ impl FeeContract {
             .instance()
             .set(&DataKey::AssetFeeConfig(asset.clone()), &config);
 
-        FeeEvents::asset_config_updated(&env, &caller, &asset, fee_rate);
+        FeeEvents::asset_config_updated(&env, &caller, &asset, fee_rate, min_fee, max_fee);
     }
 
     /// Get the fee configuration for a specific asset.
@@ -1018,7 +1228,7 @@ impl FeeContract {
                 .checked_add(fee)
                 .unwrap_or_else(|| panic_with_error!(&env, FeeError::Overflow));
 
-            FeeEvents::asset_fee_deducted(&env, &tx.payer, &tx.asset, tx.amount, fee, tx.priority);
+            FeeEvents::batch_fee_item(&env, &tx.payer, &tx.asset, tx.amount, fee, tx.priority);
             results.push_back(FeeTransactionResult { net_amount, fee });
         }
 
@@ -1036,7 +1246,12 @@ impl FeeContract {
             .set(&DataKey::TotalFeesCollected, &global_total);
 
         let count = transactions.len() as u32;
-        FeeEvents::batch_fees_deducted(&env, count, batch_total);
+        let summary_user = if count > 0 {
+            transactions.get(0).unwrap().payer
+        } else {
+            Self::require_initialized(&env)
+        };
+        FeeEvents::batch_fees_deducted(&env, &summary_user, count, batch_total);
 
         BatchFeeResult { results, total_fees: batch_total }
     }
