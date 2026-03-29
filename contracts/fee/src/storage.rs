@@ -27,6 +27,7 @@ pub enum DataKey {
     TotalReleased,
     TotalBatchCalls,
     PendingFees(u64),
+    UserActivity(Address),
 }
 
 pub fn has_admin(env: &Env) -> bool {
@@ -196,4 +197,17 @@ pub fn add_batch_call(env: &Env) -> Option<u64> {
         .instance()
         .set(&DataKey::TotalBatchCalls, &updated);
     Some(updated)
+}
+
+pub fn read_last_active(env: &Env, user: &Address) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::UserActivity(user.clone()))
+        .unwrap_or(0)
+}
+
+pub fn write_last_active(env: &Env, user: &Address, timestamp: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::UserActivity(user.clone()), &timestamp);
 }

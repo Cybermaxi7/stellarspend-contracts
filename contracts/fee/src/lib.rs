@@ -1,18 +1,21 @@
 #![no_std]
 
+mod decay;
 mod escrow;
 mod storage;
 
 use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Address, Env, Vec};
 
+use crate::decay::{calculate_fee_decay, DECAY_RATE, MIN_FEE, MAX_FEE};
 use crate::escrow::{
     collect_batch_to_escrow, collect_to_escrow, release_cycle_fees, rollover_cycle_fees,
 };
 use crate::storage::{
-    has_admin, read_admin, read_current_cycle, read_escrow_balance, read_fee_bps, read_locked,
-		read_min_fee, read_pending_fees, read_token, read_total_batch_calls, read_total_collected,
-    read_total_released, read_treasury, write_admin, write_current_cycle, write_fee_bps,
-	write_locked, write_min_fee, write_token, write_treasury,
+    has_admin, read_admin, read_current_cycle, read_escrow_balance, read_fee_bps, read_last_active,
+		read_locked, read_min_fee, read_pending_fees, read_token, read_total_batch_calls,
+		read_total_collected, read_total_released, read_treasury, write_admin,
+		write_current_cycle, write_fee_bps, write_last_active, write_locked, write_min_fee,
+		write_token, write_treasury,
 };
 pub use crate::storage::{BatchFeeResult, DataKey, MAX_BATCH_SIZE, MAX_FEE_BPS};
 
@@ -127,8 +130,16 @@ impl FeeContract {
 
     pub fn collect_fee(env: Env, payer: Address, amount: i128) -> i128 {
         payer.require_auth();
-        let pending = collect_to_escrow(&env, &payer, amount);
-        FeeEvents::fee_escrowed(&env, &payer, amount, read_current_cycle(&env));
+        
+        let last_active = read_last_active(&env, &payer);
+        let current_time = env.ledger().timestamp();
+        let decayed_amount = calculate_fee_decay(&env, amount, last_active, current_time);
+
+        let pending = collect_to_escrow(&env, &payer, decayed_amount);
+        
+        write_last_active(&env, &payer, current_time);
+        
+        FeeEvents::fee_escrowed(&env, &payer, decayed_amount, read_current_cycle(&env));
         pending
     }
 
@@ -143,7 +154,18 @@ impl FeeContract {
             panic_with_error!(&env, FeeContractError::BatchTooLarge);
         }
 
-        let result = collect_batch_to_escrow(&env, &payer, &amounts);
+        let last_active = read_last_active(&env, &payer);
+        let current_time = env.ledger().timestamp();
+
+        let mut decayed_amounts = Vec::new(&env);
+        for amount in amounts.iter() {
+            decayed_amounts.push_back(calculate_fee_decay(&env, amount, last_active, current_time));
+        }
+
+        let result = collect_batch_to_escrow(&env, &payer, &decayed_amounts);
+        
+        write_last_active(&env, &payer, current_time);
+
         FeeEvents::fee_batched(
             &env,
             &payer,
@@ -152,6 +174,15 @@ impl FeeContract {
             result.cycle,
         );
         result
+    }
+
+    pub fn update_activity(env: Env, user: Address) {
+        user.require_auth();
+        write_last_active(&env, &user, env.ledger().timestamp());
+    }
+
+    pub fn get_last_active(env: Env, user: Address) -> u64 {
+        read_last_active(&env, &user)
     }
 
     pub fn release_fees(env: Env, admin: Address, cycle: u64) -> i128 {
