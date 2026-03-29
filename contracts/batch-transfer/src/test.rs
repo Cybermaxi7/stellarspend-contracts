@@ -2,16 +2,20 @@
 
 #![cfg(test)]
 
-use crate::{
-    BatchTransferContract, BatchTransferContractClient, TransferRequest, TransferResult,
-};
+use crate::{BatchTransferContract, BatchTransferContractClient, TransferRequest, TransferResult};
 use soroban_sdk::{
     testutils::{Address as _, Events as _, Ledger},
     token, Address, Env, Vec,
 };
 
 /// Creates a test environment with the contract deployed and initialized.
-fn setup_test_env() -> (Env, Address, Address, token::Client<'static>, BatchTransferContractClient<'static>) {
+fn setup_test_env() -> (
+    Env,
+    Address,
+    Address,
+    token::Client<'static>,
+    BatchTransferContractClient<'static>,
+) {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().with_mut(|li| {
@@ -32,7 +36,6 @@ fn setup_test_env() -> (Env, Address, Address, token::Client<'static>, BatchTran
 
     let admin = Address::generate(&env);
     client.initialize(&admin);
-
 
     (env, admin, token_id, token_client, client)
 }
@@ -125,7 +128,11 @@ fn test_batch_transfer_with_invalid_amount() {
 
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     transfers.push_back(create_transfer_request(&env, recipient1.clone(), -100)); // Invalid: negative
-    transfers.push_back(create_transfer_request(&env, recipient2.clone(), 10_000_000)); // Valid
+    transfers.push_back(create_transfer_request(
+        &env,
+        recipient2.clone(),
+        10_000_000,
+    )); // Valid
 
     let result = client.batch_transfer(&admin, &token, &transfers);
 
@@ -189,9 +196,17 @@ fn test_batch_transfer_partial_failures() {
     let recipient4 = Address::generate(&env);
 
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
-    transfers.push_back(create_transfer_request(&env, recipient1.clone(), 10_000_000)); // Valid
+    transfers.push_back(create_transfer_request(
+        &env,
+        recipient1.clone(),
+        10_000_000,
+    )); // Valid
     transfers.push_back(create_transfer_request(&env, recipient2.clone(), 0)); // Invalid: zero
-    transfers.push_back(create_transfer_request(&env, recipient3.clone(), 20_000_000)); // Valid
+    transfers.push_back(create_transfer_request(
+        &env,
+        recipient3.clone(),
+        20_000_000,
+    )); // Valid
     transfers.push_back(create_transfer_request(&env, recipient4.clone(), -100)); // Invalid: negative
 
     let result = client.batch_transfer(&admin, &token, &transfers);
@@ -213,7 +228,11 @@ fn test_batch_transfer_events_emitted() {
     let recipient2 = Address::generate(&env);
 
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
-    transfers.push_back(create_transfer_request(&env, recipient1.clone(), 10_000_000));
+    transfers.push_back(create_transfer_request(
+        &env,
+        recipient1.clone(),
+        10_000_000,
+    ));
     transfers.push_back(create_transfer_request(&env, recipient2.clone(), -100)); // Invalid
 
     client.batch_transfer(&admin, &token, &transfers);
@@ -231,10 +250,18 @@ fn test_batch_transfer_accumulates_stats() {
     let recipient2 = Address::generate(&env);
 
     let mut transfers1: Vec<TransferRequest> = Vec::new(&env);
-    transfers1.push_back(create_transfer_request(&env, recipient1.clone(), 10_000_000));
+    transfers1.push_back(create_transfer_request(
+        &env,
+        recipient1.clone(),
+        10_000_000,
+    ));
 
     let mut transfers2: Vec<TransferRequest> = Vec::new(&env);
-    transfers2.push_back(create_transfer_request(&env, recipient2.clone(), 20_000_000));
+    transfers2.push_back(create_transfer_request(
+        &env,
+        recipient2.clone(),
+        20_000_000,
+    ));
 
     assert_eq!(client.get_total_batches(), 0);
     assert_eq!(client.get_total_transfers_processed(), 0);
@@ -282,11 +309,12 @@ fn test_batch_transfer_large_batch() {
     // Create a batch with 50 recipients
     let mut transfers: Vec<TransferRequest> = Vec::new(&env);
     let mut recipients: Vec<Address> = Vec::new(&env);
-    
+
     for _i in 0..50 {
         let recipient = Address::generate(&env);
         recipients.push_back(recipient.clone());
-        transfers.push_back(create_transfer_request(&env, recipient, 1_000_000)); // 0.1 XLM each
+        transfers.push_back(create_transfer_request(&env, recipient, 1_000_000));
+        // 0.1 XLM each
     }
 
     let result = client.batch_transfer(&admin, &token, &transfers);
@@ -323,9 +351,21 @@ fn test_multiple_simultaneous_batch_transfers() {
     let recipient3 = Address::generate(&env);
 
     let mut batch1: Vec<TransferRequest> = Vec::new(&env);
-    batch1.push_back(create_transfer_request(&env, recipient1.clone(), 10_000_000));
-    batch1.push_back(create_transfer_request(&env, recipient2.clone(), 20_000_000));
-    batch1.push_back(create_transfer_request(&env, recipient3.clone(), 30_000_000));
+    batch1.push_back(create_transfer_request(
+        &env,
+        recipient1.clone(),
+        10_000_000,
+    ));
+    batch1.push_back(create_transfer_request(
+        &env,
+        recipient2.clone(),
+        20_000_000,
+    ));
+    batch1.push_back(create_transfer_request(
+        &env,
+        recipient3.clone(),
+        30_000_000,
+    ));
 
     let result1 = client.batch_transfer(&admin, &token, &batch1);
     assert_eq!(result1.successful, 3);
@@ -336,7 +376,11 @@ fn test_multiple_simultaneous_batch_transfers() {
 
     let mut batch2: Vec<TransferRequest> = Vec::new(&env);
     batch2.push_back(create_transfer_request(&env, recipient1.clone(), 5_000_000)); // Same recipient
-    batch2.push_back(create_transfer_request(&env, recipient4.clone(), 15_000_000));
+    batch2.push_back(create_transfer_request(
+        &env,
+        recipient4.clone(),
+        15_000_000,
+    ));
 
     let result2 = client.batch_transfer(&admin, &token, &batch2);
     assert_eq!(result2.successful, 2);
@@ -345,7 +389,7 @@ fn test_multiple_simultaneous_batch_transfers() {
     // Note: Balance verification would show:
     // recipient1: 15_000_000 (10 + 5 from two batches)
     // recipient2: 20_000_000
-    // recipient3: 30_000_000  
+    // recipient3: 30_000_000
     // recipient4: 15_000_000
     // This would be verified in integration tests with proper token setup
 

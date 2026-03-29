@@ -9,8 +9,8 @@
 use soroban_sdk::{Address, Env, Map, Symbol, Vec};
 
 use crate::types::{
-    BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, Transaction,
-    ValidationResult, MAX_BATCH_SIZE,
+    BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, Transaction, ValidationResult,
+    MAX_BATCH_SIZE,
 };
 
 /// Computes aggregated metrics for a batch of transactions.
@@ -97,7 +97,10 @@ pub fn compute_category_metrics(
         let current = category_map.get(tx.category.clone()).unwrap_or((0, 0));
         category_map.set(
             tx.category.clone(),
-            (current.0 + 1, current.1.checked_add(tx.amount).unwrap_or(i128::MAX)),
+            (
+                current.0 + 1,
+                current.1.checked_add(tx.amount).unwrap_or(i128::MAX),
+            ),
         );
     }
 

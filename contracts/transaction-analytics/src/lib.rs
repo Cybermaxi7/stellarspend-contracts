@@ -25,9 +25,9 @@ mod types;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
 
 pub use crate::analytics::{
-    compute_batch_checksum, compute_batch_metrics, compute_category_metrics,
-    create_bundle_result, find_high_value_transactions, validate_batch,
-    validate_bundle_transactions, validate_transaction_for_bundle,
+    compute_batch_checksum, compute_batch_metrics, compute_category_metrics, create_bundle_result,
+    find_high_value_transactions, validate_batch, validate_bundle_transactions,
+    validate_transaction_for_bundle,
 };
 pub use crate::types::{
     AnalyticsEvents, BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, DataKey,
@@ -81,7 +81,9 @@ impl TransactionAnalyticsContract {
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::LastBatchId, &0u64);
-        env.storage().instance().set(&DataKey::TotalTxProcessed, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalTxProcessed, &0u64);
     }
 
     /// Generates batch analytics for multiple transactions.
@@ -167,10 +169,13 @@ impl TransactionAnalyticsContract {
             .get(&DataKey::TotalTxProcessed)
             .unwrap_or(0);
 
-        env.storage().instance().set(&DataKey::LastBatchId, &batch_id);
         env.storage()
             .instance()
-            .set(&DataKey::TotalTxProcessed, &(total_processed + tx_count as u64));
+            .set(&DataKey::LastBatchId, &batch_id);
+        env.storage().instance().set(
+            &DataKey::TotalTxProcessed,
+            &(total_processed + tx_count as u64),
+        );
         env.storage()
             .persistent()
             .set(&DataKey::BatchMetrics(batch_id), &metrics);

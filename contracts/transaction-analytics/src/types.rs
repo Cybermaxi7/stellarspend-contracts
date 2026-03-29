@@ -134,7 +134,11 @@ impl AnalyticsEvents {
 
     /// Event emitted for each category in a batch.
     pub fn category_analytics(env: &Env, batch_id: u64, category_metrics: &CategoryMetrics) {
-        let topics = (symbol_short!("category"), batch_id, &category_metrics.category);
+        let topics = (
+            symbol_short!("category"),
+            batch_id,
+            &category_metrics.category,
+        );
         env.events().publish(topics, category_metrics.clone());
     }
 
@@ -185,12 +189,7 @@ impl AnalyticsEvents {
     }
 
     /// Event emitted when a transaction fails validation in a bundle.
-    pub fn transaction_validation_failed(
-        env: &Env,
-        bundle_id: u64,
-        tx_id: u64,
-        error: &Symbol,
-    ) {
+    pub fn transaction_validation_failed(env: &Env, bundle_id: u64, tx_id: u64, error: &Symbol) {
         let topics = (symbol_short!("bundle"), symbol_short!("failed"), bundle_id);
         env.events().publish(topics, (tx_id, error.clone()));
     }

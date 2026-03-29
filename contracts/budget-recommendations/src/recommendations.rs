@@ -28,7 +28,8 @@ pub fn generate_recommendation(
     profile: &UserProfile,
 ) -> Result<BudgetRecommendation, Symbol> {
     // Calculate disposable income
-    let disposable_income = profile.monthly_income
+    let disposable_income = profile
+        .monthly_income
         .checked_sub(profile.monthly_expenses)
         .unwrap_or(0);
 
@@ -62,13 +63,12 @@ pub fn generate_recommendation(
         0
     };
 
-    let recommended_budget = profile.monthly_expenses
-        + (disposable_income - recommended_savings);
+    let recommended_budget = profile.monthly_expenses + (disposable_income - recommended_savings);
 
     // Calculate recommended spending limit (budget + small buffer)
     let buffer_percentage = 5; // 5% buffer
-    let recommended_spending_limit = recommended_budget
-        + (recommended_budget * buffer_percentage as i128) / 100;
+    let recommended_spending_limit =
+        recommended_budget + (recommended_budget * buffer_percentage as i128) / 100;
 
     // Calculate emergency fund target (3-6 months of expenses based on risk tolerance)
     let emergency_fund_months = match profile.risk_tolerance {

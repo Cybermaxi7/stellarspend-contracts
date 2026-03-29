@@ -131,12 +131,17 @@ impl RecommendationEvents {
             symbol_short!("generated"),
             batch_id,
         );
-        env.events().publish(topics, (user_id, recommendation.clone()));
+        env.events()
+            .publish(topics, (user_id, recommendation.clone()));
     }
 
     /// Event emitted when a recommendation fails for a user.
     pub fn recommendation_failed(env: &Env, batch_id: u64, user_id: u64, error: &Symbol) {
-        let topics = (symbol_short!("recommend"), symbol_short!("failed"), batch_id);
+        let topics = (
+            symbol_short!("recommend"),
+            symbol_short!("failed"),
+            batch_id,
+        );
         env.events().publish(topics, (user_id, error.clone()));
     }
 
@@ -153,7 +158,11 @@ impl RecommendationEvents {
         user_id: u64,
         confidence_score: u8,
     ) {
-        let topics = (symbol_short!("recommend"), symbol_short!("highconf"), batch_id);
+        let topics = (
+            symbol_short!("recommend"),
+            symbol_short!("highconf"),
+            batch_id,
+        );
         env.events().publish(topics, (user_id, confidence_score));
     }
 }

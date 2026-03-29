@@ -35,7 +35,7 @@ pub fn validate_user_profile(env: &Env, profile: &UserProfile) -> Result<(), Val
     // Validate address
     // Note: Address validation is basic - in production you might want more checks
     // For now, we just ensure it's not a zero address (if applicable)
-    
+
     // Validate income (must be positive)
     if profile.monthly_income <= 0 {
         return Err(ValidationError::InvalidIncome);
