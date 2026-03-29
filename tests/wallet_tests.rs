@@ -8,7 +8,7 @@ use soroban_sdk::{
 mod wallet;
 
 use wallet::{
-    WalletContract, WalletContractClient, WalletError, LinkedWalletInfo, VerificationChallenge,
+    LinkedWalletInfo, VerificationChallenge, WalletContract, WalletContractClient, WalletError,
 };
 
 fn setup_wallet_contract() -> (Env, Address, WalletContractClient<'static>) {
@@ -49,7 +49,9 @@ fn test_link_wallet_success() {
 
     client.link_wallet(&admin, &wallet_address, &owner_address);
 
-    let wallet_info = client.get_wallet_info(&wallet_address).expect("wallet info should exist");
+    let wallet_info = client
+        .get_wallet_info(&wallet_address)
+        .expect("wallet info should exist");
     assert_eq!(wallet_info.wallet_address, wallet_address);
     assert_eq!(wallet_info.owner_address, owner_address);
     assert_eq!(wallet_info.is_verified, false);
@@ -61,7 +63,8 @@ fn test_link_wallet_success() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("linked") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("linked")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -77,7 +80,7 @@ fn test_link_duplicate_wallet_fails() {
     let owner_address = Address::generate(&env);
 
     client.link_wallet(&admin, &wallet_address, &owner_address);
-    
+
     // Second linking should fail
     let another_owner = Address::generate(&env);
     client.link_wallet(&admin, &wallet_address, &another_owner);
@@ -106,7 +109,7 @@ fn test_unlink_wallet_unauthorized_fails() {
     let unauthorized = Address::generate(&env);
 
     client.link_wallet(&admin, &wallet_address, &owner_address);
-    
+
     // Unauthorized user cannot unlink
     client.unlink_wallet(&unauthorized, &wallet_address);
 }
@@ -126,7 +129,9 @@ fn test_verify_wallet_ownership_success() {
     let result = client.verify_wallet_ownership(&wallet_address, &owner_address, &signature);
     assert!(result);
 
-    let wallet_info = client.get_wallet_info(&wallet_address).expect("wallet info should exist");
+    let wallet_info = client
+        .get_wallet_info(&wallet_address)
+        .expect("wallet info should exist");
     assert!(wallet_info.is_verified);
     assert_eq!(wallet_info.verification_nonce, 1);
     assert!(client.is_wallet_verified(&wallet_address));
@@ -183,7 +188,8 @@ fn test_create_verification_challenge_success() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("started") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("started")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -389,7 +395,9 @@ fn test_get_wallet_owner_success() {
 
     client.link_wallet(&admin, &wallet_address, &owner_address);
 
-    let retrieved_owner = client.get_wallet_owner(&wallet_address).expect("owner should exist");
+    let retrieved_owner = client
+        .get_wallet_owner(&wallet_address)
+        .expect("owner should exist");
     assert_eq!(retrieved_owner, owner_address);
 }
 
@@ -411,10 +419,10 @@ fn test_admin_can_unlink_any_wallet() {
     let owner_address = Address::generate(&env);
 
     client.link_wallet(&admin, &wallet_address, &owner_address);
-    
+
     // Admin should be able to unlink any wallet
     client.unlink_wallet(&admin, &wallet_address);
-    
+
     assert!(client.get_wallet_info(&wallet_address).is_none());
 }
 
@@ -429,9 +437,13 @@ fn test_multiple_wallets_per_owner() {
     client.link_wallet(&admin, &wallet1, &owner_address);
     client.link_wallet(&admin, &wallet2, &owner_address);
 
-    let info1 = client.get_wallet_info(&wallet1).expect("wallet1 info should exist");
-    let info2 = client.get_wallet_info(&wallet2).expect("wallet2 info should exist");
-    
+    let info1 = client
+        .get_wallet_info(&wallet1)
+        .expect("wallet1 info should exist");
+    let info2 = client
+        .get_wallet_info(&wallet2)
+        .expect("wallet2 info should exist");
+
     assert_eq!(info1.owner_address, owner_address);
     assert_eq!(info2.owner_address, owner_address);
     assert_ne!(info1.wallet_address, info2.wallet_address);
@@ -452,17 +464,18 @@ fn test_verification_events_emitted() {
     client.verify_wallet_ownership(&wallet_address, &owner_address, &signature);
 
     let events = env.events().all();
-    
+
     // Check for ownership verified event
     let ownership_verified_events = events
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("verified") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("verified")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
-    
+
     assert!(ownership_verified_events >= 1);
 }
 
@@ -500,11 +513,15 @@ fn test_nonce_incrementing_on_verification() {
 
     // First verification
     client.verify_wallet_ownership(&wallet_address, &owner_address, &signature.clone());
-    let info1 = client.get_wallet_info(&wallet_address).expect("wallet info should exist");
+    let info1 = client
+        .get_wallet_info(&wallet_address)
+        .expect("wallet info should exist");
     assert_eq!(info1.verification_nonce, 1);
 
     // Second verification (nonce should increment)
     client.verify_wallet_ownership(&wallet_address, &owner_address, &signature);
-    let info2 = client.get_wallet_info(&wallet_address).expect("wallet info should exist");
+    let info2 = client
+        .get_wallet_info(&wallet_address)
+        .expect("wallet info should exist");
     assert_eq!(info2.verification_nonce, 2);
 }

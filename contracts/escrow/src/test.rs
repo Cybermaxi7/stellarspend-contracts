@@ -2,9 +2,7 @@
 
 #![cfg(test)]
 
-use crate::{
-    EscrowContract, EscrowContractClient, EscrowStatus, ReversalRequest, ReversalResult,
-};
+use crate::{EscrowContract, EscrowContractClient, EscrowStatus, ReversalRequest, ReversalResult};
 use soroban_sdk::{
     testutils::{Address as _, Events as _, Ledger},
     token, Address, Env, Vec,
@@ -39,7 +37,14 @@ fn setup_test_env() -> (
     let admin = Address::generate(&env);
     client.initialize(&admin, &token_id);
 
-    (env, admin, token_id, token_client, token_admin_client, client)
+    (
+        env,
+        admin,
+        token_id,
+        token_client,
+        token_admin_client,
+        client,
+    )
 }
 
 /// Helper to create a reversal request.
@@ -61,7 +66,7 @@ fn create_test_escrow(
     token_admin.mint(depositor, &amount);
 
     // Create escrow
-    client.create_escrow(depositor, recipient, &amount, &deadline)
+    client.create_escrow(depositor, recipient, &None, &amount, &deadline)
 }
 
 // ============================================
@@ -101,8 +106,15 @@ fn test_create_escrow() {
     let amount: i128 = 10_000_000;
     let deadline: u64 = 20000;
 
-    let escrow_id =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, amount, deadline);
+    let escrow_id = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        amount,
+        deadline,
+    );
 
     assert_eq!(escrow_id, 1);
     assert_eq!(client.get_escrow_counter(), 1);
@@ -164,7 +176,7 @@ fn test_create_escrow_invalid_amount() {
     let recipient = Address::generate(&env);
 
     // Should panic due to invalid amount
-    client.create_escrow(&depositor, &recipient, &0, &20000);
+    client.create_escrow(&depositor, &recipient, &None, &0, &20000);
 }
 
 // ============================================
@@ -179,8 +191,15 @@ fn test_batch_reverse_single_escrow() {
     let recipient = Address::generate(&env);
     let amount: i128 = 10_000_000;
 
-    let escrow_id =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, amount, 20000);
+    let escrow_id = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        amount,
+        20000,
+    );
 
     // Create reversal request
     let mut requests: Vec<ReversalRequest> = Vec::new(&env);
@@ -265,9 +284,18 @@ fn test_batch_reverse_multiple_escrows() {
     assert_eq!(result.total_reversed, 60_000_000);
 
     // Verify all escrows are reversed
-    assert_eq!(client.get_escrow(&escrow_id1).unwrap().status, EscrowStatus::Reversed);
-    assert_eq!(client.get_escrow(&escrow_id2).unwrap().status, EscrowStatus::Reversed);
-    assert_eq!(client.get_escrow(&escrow_id3).unwrap().status, EscrowStatus::Reversed);
+    assert_eq!(
+        client.get_escrow(&escrow_id1).unwrap().status,
+        EscrowStatus::Reversed
+    );
+    assert_eq!(
+        client.get_escrow(&escrow_id2).unwrap().status,
+        EscrowStatus::Reversed
+    );
+    assert_eq!(
+        client.get_escrow(&escrow_id3).unwrap().status,
+        EscrowStatus::Reversed
+    );
 }
 
 #[test]
@@ -343,8 +371,15 @@ fn test_batch_reverse_already_released_escrow() {
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    let escrow_id =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, 10_000_000, 20000);
+    let escrow_id = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        10_000_000,
+        20000,
+    );
 
     // Release the escrow first
     client.release_escrow(&admin, &escrow_id);
@@ -376,8 +411,15 @@ fn test_batch_reverse_already_reversed_escrow() {
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    let escrow_id =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, 10_000_000, 20000);
+    let escrow_id = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        10_000_000,
+        20000,
+    );
 
     // Reverse the escrow first
     let mut requests: Vec<ReversalRequest> = Vec::new(&env);
@@ -565,8 +607,15 @@ fn test_batch_reverse_unauthorized() {
     let recipient = Address::generate(&env);
     let unauthorized = Address::generate(&env);
 
-    let escrow_id =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, 10_000_000, 20000);
+    let escrow_id = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        10_000_000,
+        20000,
+    );
 
     let mut requests: Vec<ReversalRequest> = Vec::new(&env);
     requests.push_back(create_reversal_request(escrow_id));
@@ -586,8 +635,15 @@ fn test_batch_reverse_events_emitted() {
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    let escrow_id1 =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, 10_000_000, 20000);
+    let escrow_id1 = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        10_000_000,
+        20000,
+    );
 
     // Create another depositor for second escrow
     let depositor2 = Address::generate(&env);
@@ -747,8 +803,15 @@ fn test_release_escrow() {
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    let escrow_id =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, 10_000_000, 20000);
+    let escrow_id = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        10_000_000,
+        20000,
+    );
 
     // Release the escrow
     client.release_escrow(&admin, &escrow_id);
@@ -766,8 +829,15 @@ fn test_release_escrow_already_reversed() {
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    let escrow_id =
-        create_test_escrow(&env, &client, &token_admin, &depositor, &recipient, 10_000_000, 20000);
+    let escrow_id = create_test_escrow(
+        &env,
+        &client,
+        &token_admin,
+        &depositor,
+        &recipient,
+        10_000_000,
+        20000,
+    );
 
     // Reverse the escrow first
     let mut requests: Vec<ReversalRequest> = Vec::new(&env);

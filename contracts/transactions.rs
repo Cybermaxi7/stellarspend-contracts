@@ -3,8 +3,13 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol
 #[path = "multisig.rs"]
 mod multisig;
 
-pub use multisig::{MultiSigError, PendingTx};
+#[path = "timelock.rs"]
+mod timelock;
+
 use multisig::{DataKey, MultisigEvents};
+pub use multisig::{MultiSigError, PendingTx};
+use timelock::TimelockEvents;
+pub use timelock::{TimelockError, TimelockedTx};
 
 #[contract]
 pub struct TransactionsContract;
@@ -45,7 +50,9 @@ impl TransactionsContract {
             panic_with_error!(&env, MultiSigError::InvalidAmount);
         }
 
-        env.storage().persistent().set(&DataKey::Balance(user), &amount);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(user), &amount);
     }
 
     pub fn get_balance(env: Env, user: Address) -> i128 {
@@ -152,6 +159,124 @@ impl TransactionsContract {
 
     pub fn has_approved(env: Env, tx_id: u64, signer: Address) -> bool {
         multisig::has_approval(&env, tx_id, &signer)
+    }
+
+    /// Schedules a timelocked transaction for future execution.
+    ///
+    /// The `from` address must authorize this call. The transaction will not
+    /// execute until the ledger timestamp is at or after `execute_at`.
+    pub fn schedule_timelocked_transaction(
+        env: Env,
+        from: Address,
+        to: Address,
+        amount: i128,
+        payload: Symbol,
+        asset: Option<Address>,
+        execute_at: u64,
+    ) -> TimelockedTx {
+        from.require_auth();
+
+        if amount <= 0 {
+            panic_with_error!(&env, MultiSigError::InvalidAmount);
+        }
+
+        let now = env.ledger().timestamp();
+        if execute_at <= now {
+            // Must be strictly in the future.
+            panic_with_error!(&env, TimelockError::InvalidScheduleTime);
+        }
+
+        let id = timelock::next_timelock_id(&env);
+        let tx = TimelockedTx {
+            id,
+            from: from.clone(),
+            to,
+            amount,
+            payload,
+            asset,
+            execute_at,
+            created_at: now,
+            executed: false,
+            canceled: false,
+            executed_at: None,
+            canceled_at: None,
+        };
+
+        timelock::save_timelock(&env, &tx);
+        TimelockEvents::scheduled(&env, &tx);
+
+        tx
+    }
+
+    /// Executes a previously scheduled timelocked transaction once its
+    /// execution time has been reached.
+    ///
+    /// The original `from` or the contract admin may execute the transaction.
+    pub fn execute_timelocked_transaction(env: Env, caller: Address, id: u64) {
+        caller.require_auth();
+
+        let mut tx = timelock::get_timelock(&env, id)
+            .unwrap_or_else(|| panic_with_error!(&env, TimelockError::NotFound));
+
+        if tx.executed {
+            panic_with_error!(&env, TimelockError::AlreadyExecuted);
+        }
+        if tx.canceled {
+            panic_with_error!(&env, TimelockError::AlreadyCanceled);
+        }
+
+        let now = env.ledger().timestamp();
+        if now < tx.execute_at {
+            panic_with_error!(&env, TimelockError::EarlyExecution);
+        }
+
+        // Allow either the original sender or the admin to execute.
+        let admin = multisig::get_admin(&env);
+        if caller != tx.from && caller != admin {
+            panic_with_error!(&env, MultiSigError::Unauthorized);
+        }
+
+        // Reuse the existing internal balance transfer logic.
+        Self::execute_transfer(&env, &tx.from, &tx.to, tx.amount);
+
+        tx.executed = true;
+        tx.executed_at = Some(now);
+        timelock::update_timelock(&env, &tx);
+
+        TimelockEvents::executed(&env, &tx, &caller);
+    }
+
+    /// Cancels a timelocked transaction before it has been executed.
+    ///
+    /// Only the original `from` address or the admin may cancel.
+    pub fn cancel_timelocked_transaction(env: Env, caller: Address, id: u64) {
+        caller.require_auth();
+
+        let mut tx = timelock::get_timelock(&env, id)
+            .unwrap_or_else(|| panic_with_error!(&env, TimelockError::NotFound));
+
+        if tx.executed {
+            panic_with_error!(&env, TimelockError::AlreadyExecuted);
+        }
+        if tx.canceled {
+            panic_with_error!(&env, TimelockError::AlreadyCanceled);
+        }
+
+        let admin = multisig::get_admin(&env);
+        if caller != tx.from && caller != admin {
+            panic_with_error!(&env, MultiSigError::Unauthorized);
+        }
+
+        tx.canceled = true;
+        tx.canceled_at = Some(env.ledger().timestamp());
+        timelock::update_timelock(&env, &tx);
+
+        TimelockEvents::cancelled(&env, &tx, &caller);
+    }
+
+    /// Returns a timelocked transaction by its identifier, if present.
+    pub fn get_timelocked_transaction(env: Env, id: u64) -> Option<TimelockedTx> {
+        timelock::get_timelock(&env, id)
     }
 }
 

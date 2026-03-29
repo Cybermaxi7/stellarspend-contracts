@@ -1,13 +1,13 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype,symbol_short, Address, BytesN, Env};
-
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env};
 
 #[contracttype]
 #[derive(Clone)]
 enum DataKey {
     Admin,
     NewAdmin,
+    Version,
 }
 
 #[contract]
@@ -15,13 +15,10 @@ pub struct UpgradeableContract;
 
 #[contractimpl]
 impl UpgradeableContract {
-    // Note, that constructor is not called when the contract is upgraded.
-    // Thus we introduce a new function `handle_upgrade` that brings the
-    // freshly upgraded contract to proper state (specifically, initializes
-    // the `NewAdmin` key).
     pub fn __constructor(e: Env, admin: Address) {
         e.storage().instance().set(&DataKey::Admin, &admin);
         e.storage().instance().set(&DataKey::NewAdmin, &admin);
+        e.storage().instance().set(&DataKey::Version, &2u32);
     }
 
     pub fn handle_upgrade(e: Env) {
@@ -30,30 +27,43 @@ impl UpgradeableContract {
         if !e.storage().instance().has(&DataKey::NewAdmin) {
             e.storage().instance().set(&DataKey::NewAdmin, &admin);
         }
+        // Ensure version is updated to 2 during migration if it wasn't already
+        e.storage().instance().set(&DataKey::Version, &2u32);
     }
 
-    pub fn version() -> u32 {
-        2
+    pub fn version(e: Env) -> u32 {
+        e.storage().instance().get(&DataKey::Version).unwrap_or(2)
     }
 
     pub fn new_v2_fn() -> u32 {
         1010101
     }
 
-    pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) {
-    let admin: Address = e.storage().instance().get(&DataKey::NewAdmin).unwrap();
-    admin.require_auth();
+    pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>, new_version: u32) {
+        let admin: Address = e.storage().instance().get(&DataKey::NewAdmin).expect("NewAdmin not set");
+        admin.require_auth();
 
-    // Validate storage layout before upgrading
-    if !e.storage().instance().has(&DataKey::Admin) {
-        panic!("storage layout invalid: Admin key missing");
-    }
-    if !e.storage().instance().has(&DataKey::NewAdmin) {
-        panic!("storage layout invalid: NewAdmin key missing");
-    }
+        // [SEC-UPGRADE-01] Version check: Prevent downgrades
+        let current_version = Self::version(e.clone());
+        if new_version <= current_version {
+            panic!("Upgrade failed: new version must be greater than current version");
+        }
 
-    e.deployer().update_current_contract_wasm(new_wasm_hash.clone());
-    e.events()
-        .publish((symbol_short!("upgrade"),), new_wasm_hash);
-}
+        // [SEC-UPGRADE-02] Migration validation
+        if !e.storage().instance().has(&DataKey::Admin) {
+            panic!("Upgrade failed: critical state validation failed (Admin missing)");
+        }
+        if !e.storage().instance().has(&DataKey::NewAdmin) {
+            panic!("Upgrade failed: critical state validation failed (NewAdmin missing)");
+        }
+
+        // Update to new version
+        e.storage().instance().set(&DataKey::Version, &new_version);
+
+        e.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        
+        e.events()
+            .publish((symbol_short!("upgrade"), current_version, new_version), new_wasm_hash);
+    }
 }

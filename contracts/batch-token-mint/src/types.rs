@@ -141,7 +141,13 @@ impl MintEvents {
     }
 
     /// Event emitted when minting fails for a recipient.
-    pub fn mint_failed(env: &Env, batch_id: u64, token: &Address, recipient: &Address, error_code: u32) {
+    pub fn mint_failed(
+        env: &Env,
+        batch_id: u64,
+        token: &Address,
+        recipient: &Address,
+        error_code: u32,
+    ) {
         let topics = (symbol_short!("mint"), symbol_short!("failed"));
         env.events().publish(
             topics,
@@ -161,22 +167,20 @@ impl MintEvents {
         let topics = (symbol_short!("mint"), symbol_short!("done"));
         env.events().publish(
             topics,
-            (
-                batch_id,
-                token.clone(),
-                successful,
-                failed,
-                total_amount,
-            ),
+            (batch_id, token.clone(), successful, failed, total_amount),
         );
     }
 
     /// Event emitted for large mint operations (>= 1 billion stroops).
-    pub fn large_mint(env: &Env, batch_id: u64, token: &Address, recipient: &Address, amount: i128) {
+    pub fn large_mint(
+        env: &Env,
+        batch_id: u64,
+        token: &Address,
+        recipient: &Address,
+        amount: i128,
+    ) {
         let topics = (symbol_short!("mint"), symbol_short!("large"));
-        env.events().publish(
-            topics,
-            (batch_id, token.clone(), recipient.clone(), amount),
-        );
+        env.events()
+            .publish(topics, (batch_id, token.clone(), recipient.clone(), amount));
     }
 }

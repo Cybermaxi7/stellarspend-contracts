@@ -29,7 +29,14 @@ fn test_recurring_payment_flow() {
     let client = RecurringPaymentContractClient::new(&env, &contract_id);
 
     // 1. Create payment
-    let payment_id = client.create_payment(&sender, &recipient, &token_addr, &amount, &interval, &start_time);
+    let payment_id = client.create_payment(
+        &sender,
+        &recipient,
+        &token_addr,
+        &amount,
+        &interval,
+        &start_time,
+    );
     assert_eq!(payment_id, 1);
 
     let payment = client.get_payment(&payment_id);
@@ -95,7 +102,14 @@ fn test_execute_with_delay() {
     let contract_id = env.register_contract(None, RecurringPaymentContract);
     let client = RecurringPaymentContractClient::new(&env, &contract_id);
 
-    client.create_payment(&sender, &recipient, &token_addr, &amount, &interval, &start_time);
+    client.create_payment(
+        &sender,
+        &recipient,
+        &token_addr,
+        &amount,
+        &interval,
+        &start_time,
+    );
 
     // Set time way ahead (e.g., 2.5 intervals ahead)
     env.ledger().set_timestamp(start_time + interval * 2 + 500);

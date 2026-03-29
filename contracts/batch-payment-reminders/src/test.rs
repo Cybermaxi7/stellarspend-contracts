@@ -2,7 +2,10 @@
 
 use crate::types::PaymentReminderRequest;
 use crate::{BatchPaymentRemindersContract, BatchPaymentRemindersContractClient};
-use soroban_sdk::{testutils::{Address as _, Events as _}, vec, Address, Env, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Events as _},
+    vec, Address, Env, Vec,
+};
 
 fn setup(env: &Env) -> (Address, BatchPaymentRemindersContractClient<'_>) {
     env.mock_all_auths();
@@ -101,7 +104,10 @@ fn test_dispatch_batch_reminders_events_emitted() {
 
     let events = env.events().all();
     assert!(!events.is_empty(), "events emitted");
-    assert!(events.len() >= 2, "expected at least started + rem_sent + completed");
+    assert!(
+        events.len() >= 2,
+        "expected at least started + rem_sent + completed"
+    );
 }
 
 #[test]

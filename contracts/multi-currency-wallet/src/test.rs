@@ -139,12 +139,18 @@ fn test_batch_update_balances_multiple_users_multiple_currencies() {
     assert_eq!(result.metrics.unique_currencies, 3);
 
     // Verify individual balances
-    assert_eq!(client.get_balance(&user1, &symbol_short!("USDC")), 500_000_000);
+    assert_eq!(
+        client.get_balance(&user1, &symbol_short!("USDC")),
+        500_000_000
+    );
     assert_eq!(
         client.get_balance(&user2, &symbol_short!("XLM")),
         10_000_000_000
     );
-    assert_eq!(client.get_balance(&user3, &symbol_short!("EURC")), 750_000_000);
+    assert_eq!(
+        client.get_balance(&user3, &symbol_short!("EURC")),
+        750_000_000
+    );
 }
 
 #[test]
@@ -175,7 +181,10 @@ fn test_balance_add_operation() {
     let result = client.batch_update_balances(&admin, &requests2);
 
     assert_eq!(result.successful, 1);
-    assert_eq!(client.get_balance(&user, &symbol_short!("USDC")), 1500_000_000);
+    assert_eq!(
+        client.get_balance(&user, &symbol_short!("USDC")),
+        1500_000_000
+    );
 }
 
 #[test]
@@ -206,7 +215,10 @@ fn test_balance_subtract_operation() {
     let result = client.batch_update_balances(&admin, &requests2);
 
     assert_eq!(result.successful, 1);
-    assert_eq!(client.get_balance(&user, &symbol_short!("USDC")), 700_000_000);
+    assert_eq!(
+        client.get_balance(&user, &symbol_short!("USDC")),
+        700_000_000
+    );
 }
 
 #[test]
@@ -247,7 +259,10 @@ fn test_balance_subtract_insufficient_fails() {
     }
 
     // Balance should remain unchanged
-    assert_eq!(client.get_balance(&user, &symbol_short!("USDC")), 500_000_000);
+    assert_eq!(
+        client.get_balance(&user, &symbol_short!("USDC")),
+        500_000_000
+    );
 }
 
 #[test]
@@ -527,9 +542,18 @@ fn test_mixed_operations_same_user() {
     assert_eq!(result.failed, 0);
 
     // Verify all balances for the same user
-    assert_eq!(client.get_balance(&user, &symbol_short!("USDC")), 1000_000_000);
-    assert_eq!(client.get_balance(&user, &symbol_short!("XLM")), 5000_000_000);
-    assert_eq!(client.get_balance(&user, &symbol_short!("EURC")), 750_000_000);
+    assert_eq!(
+        client.get_balance(&user, &symbol_short!("USDC")),
+        1000_000_000
+    );
+    assert_eq!(
+        client.get_balance(&user, &symbol_short!("XLM")),
+        5000_000_000
+    );
+    assert_eq!(
+        client.get_balance(&user, &symbol_short!("EURC")),
+        750_000_000
+    );
 
     // Metrics should show 1 unique user, 3 unique currencies
     assert_eq!(result.metrics.unique_users, 1);

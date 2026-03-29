@@ -1,6 +1,6 @@
 use soroban_sdk::{
-    contract, contractimpl, contracterror, contracttype, panic_with_error, symbol_short,
-    token, Address, Env, Vec, Map, U256,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    Address, Env, Map, Vec, U256,
 };
 
 #[derive(Clone)]
@@ -107,21 +107,33 @@ impl TokenEvents {
         let topics = (symbol_short!("burn"), symbol_short!("tokens"));
         env.events().publish(
             topics,
-            (from.clone(), amount, burner.clone(), env.ledger().timestamp()),
+            (
+                from.clone(),
+                amount,
+                burner.clone(),
+                env.ledger().timestamp(),
+            ),
         );
     }
 
     pub fn transfer(env: &Env, from: &Address, to: &Address, amount: i128) {
         let topics = (symbol_short!("transfer"), symbol_short!("tokens"));
-        env.events()
-            .publish(topics, (from.clone(), to.clone(), amount, env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (from.clone(), to.clone(), amount, env.ledger().timestamp()),
+        );
     }
 
     pub fn approval(env: &Env, owner: &Address, spender: &Address, amount: i128) {
         let topics = (symbol_short!("approval"), symbol_short!("tokens"));
         env.events().publish(
             topics,
-            (owner.clone(), spender.clone(), amount, env.ledger().timestamp()),
+            (
+                owner.clone(),
+                spender.clone(),
+                amount,
+                env.ledger().timestamp(),
+            ),
         );
     }
 
@@ -147,14 +159,18 @@ impl TokenEvents {
 
     pub fn minter_added(env: &Env, admin: &Address, minter: &Address) {
         let topics = (symbol_short!("minter"), symbol_short!("added"));
-        env.events()
-            .publish(topics, (admin.clone(), minter.clone(), env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (admin.clone(), minter.clone(), env.ledger().timestamp()),
+        );
     }
 
     pub fn minter_removed(env: &Env, admin: &Address, minter: &Address) {
         let topics = (symbol_short!("minter"), symbol_short!("removed"));
-        env.events()
-            .publish(topics, (admin.clone(), minter.clone(), env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (admin.clone(), minter.clone(), env.ledger().timestamp()),
+        );
     }
 }
 
@@ -188,7 +204,9 @@ pub fn initialize_token(
     env.storage().instance().set(&DataKey::TotalMinted, &0i128);
     env.storage().instance().set(&DataKey::TotalBurned, &0i128);
     env.storage().instance().set(&DataKey::Paused, &false);
-    env.storage().instance().set(&DataKey::Minters(admin.clone()), &true); // Admin is always a minter
+    env.storage()
+        .instance()
+        .set(&DataKey::Minters(admin.clone()), &true); // Admin is always a minter
 
     // Set caps if provided
     if let Some(cap) = mint_cap {
@@ -250,36 +268,40 @@ pub fn is_minter(env: &Env, address: &Address) -> bool {
 
 pub fn add_minter(env: &Env, admin: Address, minter: Address) {
     require_admin(env, &admin);
-    
+
     if !is_minter(env, &minter) {
-        env.storage().instance().set(&DataKey::Minters(minter.clone()), &true);
+        env.storage()
+            .instance()
+            .set(&DataKey::Minters(minter.clone()), &true);
         TokenEvents::minter_added(env, &admin, &minter);
     }
 }
 
 pub fn remove_minter(env: &Env, admin: Address, minter: Address) {
     require_admin(env, &admin);
-    
+
     // Don't allow removing the admin
     let admin_addr = get_admin(env);
     if minter == admin_addr {
         panic_with_error!(env, TokenError::Unauthorized);
     }
-    
+
     if is_minter(env, &minter) {
-        env.storage().instance().remove(&DataKey::Minters(minter.clone()));
+        env.storage()
+            .instance()
+            .remove(&DataKey::Minters(minter.clone()));
         TokenEvents::minter_removed(env, &admin, &minter);
     }
 }
 
 pub fn mint(env: &Env, minter: Address, to: Address, amount: i128) -> U256 {
     require_minter(env, &minter);
-    
+
     // Validate inputs
     if amount <= 0 {
         panic_with_error!(env, TokenError::InvalidAmount);
     }
-    
+
     if to == Address::from_contract_id(env) {
         panic_with_error!(env, TokenError::ZeroAddress);
     }
@@ -291,7 +313,8 @@ pub fn mint(env: &Env, minter: Address, to: Address, amount: i128) -> U256 {
 
     // Check mint cap
     let current_supply = get_total_supply(env);
-    let new_supply = current_supply.checked_add(amount)
+    let new_supply = current_supply
+        .checked_add(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Overflow));
 
     if let Some(cap) = get_mint_cap(env) {
@@ -303,19 +326,25 @@ pub fn mint(env: &Env, minter: Address, to: Address, amount: i128) -> U256 {
 
     // Update balances and supply
     let current_balance = get_balance(env, &to);
-    let new_balance = current_balance.checked_add(amount)
+    let new_balance = current_balance
+        .checked_add(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Overflow));
 
     env.storage()
         .persistent()
         .set(&DataKey::Balance(to.clone()), &new_balance);
-    env.storage().instance().set(&DataKey::TokenSupply, &new_supply);
+    env.storage()
+        .instance()
+        .set(&DataKey::TokenSupply, &new_supply);
 
     // Update statistics
     let total_minted = get_total_minted(env);
-    let new_total_minted = total_minted.checked_add(amount)
+    let new_total_minted = total_minted
+        .checked_add(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Overflow));
-    env.storage().instance().set(&DataKey::TotalMinted, &new_total_minted);
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalMinted, &new_total_minted);
 
     // Record mint transaction
     let transaction_id = generate_transaction_id(env);
@@ -327,9 +356,10 @@ pub fn mint(env: &Env, minter: Address, to: Address, amount: i128) -> U256 {
         transaction_id: transaction_id.clone(),
     };
 
-    env.storage()
-        .persistent()
-        .set(&DataKey::MintHistory(env.ledger().timestamp()), &mint_record);
+    env.storage().persistent().set(
+        &DataKey::MintHistory(env.ledger().timestamp()),
+        &mint_record,
+    );
 
     // Emit events
     TokenEvents::mint(env, &to, amount, &minter);
@@ -340,7 +370,7 @@ pub fn mint(env: &Env, minter: Address, to: Address, amount: i128) -> U256 {
 
 pub fn burn(env: &Env, from: Address, amount: i128) -> U256 {
     from.require_auth();
-    
+
     // Validate inputs
     if amount <= 0 {
         panic_with_error!(env, TokenError::InvalidAmount);
@@ -359,7 +389,8 @@ pub fn burn(env: &Env, from: Address, amount: i128) -> U256 {
 
     // Check burn cap
     let total_burned = get_total_burned(env);
-    let new_total_burned = total_burned.checked_add(amount)
+    let new_total_burned = total_burned
+        .checked_add(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Overflow));
 
     if let Some(cap) = get_burn_cap(env) {
@@ -370,23 +401,31 @@ pub fn burn(env: &Env, from: Address, amount: i128) -> U256 {
     }
 
     // Update balances and supply
-    let new_balance = current_balance.checked_sub(amount)
+    let new_balance = current_balance
+        .checked_sub(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Underflow));
     let current_supply = get_total_supply(env);
-    let new_supply = current_supply.checked_sub(amount)
+    let new_supply = current_supply
+        .checked_sub(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Underflow));
 
     env.storage()
         .persistent()
         .set(&DataKey::Balance(from.clone()), &new_balance);
-    env.storage().instance().set(&DataKey::TokenSupply, &new_supply);
+    env.storage()
+        .instance()
+        .set(&DataKey::TokenSupply, &new_supply);
 
     // Update statistics
-    env.storage().instance().set(&DataKey::TotalBurned, &new_total_burned);
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalBurned, &new_total_burned);
 
     // Remove balance if zero to save storage
     if new_balance == 0 {
-        env.storage().persistent().remove(&DataKey::Balance(from.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Balance(from.clone()));
     }
 
     // Record burn transaction
@@ -399,9 +438,10 @@ pub fn burn(env: &Env, from: Address, amount: i128) -> U256 {
         burner: from.clone(),
     };
 
-    env.storage()
-        .persistent()
-        .set(&DataKey::BurnHistory(env.ledger().timestamp()), &burn_record);
+    env.storage().persistent().set(
+        &DataKey::BurnHistory(env.ledger().timestamp()),
+        &burn_record,
+    );
 
     // Emit events
     TokenEvents::burn(env, &from, amount, &from);
@@ -412,12 +452,12 @@ pub fn burn(env: &Env, from: Address, amount: i128) -> U256 {
 
 pub fn transfer(env: &Env, from: Address, to: Address, amount: i128) {
     from.require_auth();
-    
+
     // Validate inputs
     if amount <= 0 {
         panic_with_error!(env, TokenError::InvalidAmount);
     }
-    
+
     if to == Address::from_contract_id(env) {
         panic_with_error!(env, TokenError::ZeroAddress);
     }
@@ -434,10 +474,12 @@ pub fn transfer(env: &Env, from: Address, to: Address, amount: i128) {
     }
 
     // Update balances
-    let new_from_balance = from_balance.checked_sub(amount)
+    let new_from_balance = from_balance
+        .checked_sub(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Underflow));
     let to_balance = get_balance(env, &to);
-    let new_to_balance = to_balance.checked_add(amount)
+    let new_to_balance = to_balance
+        .checked_add(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Overflow));
 
     env.storage()
@@ -449,7 +491,9 @@ pub fn transfer(env: &Env, from: Address, to: Address, amount: i128) {
 
     // Remove from balance if zero to save storage
     if new_from_balance == 0 {
-        env.storage().persistent().remove(&DataKey::Balance(from.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Balance(from.clone()));
     }
 
     // Emit event
@@ -458,7 +502,7 @@ pub fn transfer(env: &Env, from: Address, to: Address, amount: i128) {
 
 pub fn approve(env: &Env, owner: Address, spender: Address, amount: i128) {
     owner.require_auth();
-    
+
     // Validate inputs
     if amount < 0 {
         panic_with_error!(env, TokenError::InvalidAmount);
@@ -484,12 +528,12 @@ pub fn approve(env: &Env, owner: Address, spender: Address, amount: i128) {
 
 pub fn transfer_from(env: &Env, spender: Address, from: Address, to: Address, amount: i128) {
     spender.require_auth();
-    
+
     // Validate inputs
     if amount <= 0 {
         panic_with_error!(env, TokenError::InvalidAmount);
     }
-    
+
     if to == Address::from_contract_id(env) {
         panic_with_error!(env, TokenError::ZeroAddress);
     }
@@ -512,10 +556,12 @@ pub fn transfer_from(env: &Env, spender: Address, from: Address, to: Address, am
     }
 
     // Update balances
-    let new_from_balance = from_balance.checked_sub(amount)
+    let new_from_balance = from_balance
+        .checked_sub(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Underflow));
     let to_balance = get_balance(env, &to);
-    let new_to_balance = to_balance.checked_add(amount)
+    let new_to_balance = to_balance
+        .checked_add(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Overflow));
 
     env.storage()
@@ -527,21 +573,25 @@ pub fn transfer_from(env: &Env, spender: Address, from: Address, to: Address, am
 
     // Remove from balance if zero to save storage
     if new_from_balance == 0 {
-        env.storage().persistent().remove(&DataKey::Balance(from.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Balance(from.clone()));
     }
 
     // Update allowance
-    let new_allowance = allowance.checked_sub(amount)
+    let new_allowance = allowance
+        .checked_sub(amount)
         .unwrap_or_else(|| panic_with_error!(env, TokenError::Underflow));
-    
+
     if new_allowance == 0 {
         env.storage()
             .persistent()
             .remove(&DataKey::Allowance(from.clone(), spender.clone()));
     } else {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Allowance(from.clone(), spender.clone()), &new_allowance);
+        env.storage().persistent().set(
+            &DataKey::Allowance(from.clone(), spender.clone()),
+            &new_allowance,
+        );
     }
 
     // Emit events
@@ -615,12 +665,12 @@ pub fn get_token_metrics(env: &Env) -> TokenMetrics {
     let total_supply = get_total_supply(env);
     let total_minted = get_total_minted(env);
     let total_burned = get_total_burned(env);
-    
+
     TokenMetrics {
         total_supply,
         total_minted,
         total_burned,
-        holders_count: 0, // Would require iteration to calculate
+        holders_count: 0,     // Would require iteration to calculate
         last_mint_time: None, // Would require history lookup
         last_burn_time: None, // Would require history lookup
     }
@@ -632,11 +682,11 @@ fn generate_transaction_id(env: &Env) -> U256 {
     let timestamp = env.ledger().timestamp();
     let sequence = env.ledger().sequence();
     let mut bytes = [0u8; 32];
-    
+
     // Simple ID generation based on timestamp and sequence
     bytes[0..8].copy_from_slice(&timestamp.to_be_bytes());
     bytes[8..16].copy_from_slice(&sequence.to_be_bytes());
-    
+
     U256::from_be_bytes(bytes)
 }
 

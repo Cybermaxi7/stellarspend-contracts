@@ -61,26 +61,36 @@ pub fn distribute_fee(env: &Env, fee_amount: i128, shares: &Vec<FeeRecipientShar
     }
 }
 //! # Fee Calculation Engine
-//! 
+//!
 //! Implements dynamic fee calculation for transactions with configurable fee structures.
 //! Supports percentage-based fees, tiered pricing, and automatic fee deductions.
 
-use soroban_sdk::{Address, Env, Symbol, symbol_short};
+use soroban_sdk::{symbol_short, Address, Env, Symbol};
 
 use crate::types::{FeeConfig, FeeTier, FeeCalculationResult, DataKey, FeeDeductionEvent, ValidationError, AnalyticsEvents};
 use soroban_sdk::Symbol;
+use crate::types::{
+    AnalyticsEvents, DataKey, FeeCalculationResult, FeeConfig, FeeDeductionEvent, FeeTier,
+    ValidationError,
+};
 
 /// Calculates fees for a single transaction based on the current fee configuration.
-/// 
+///
 /// # Arguments
 /// * `env` - The contract environment
 /// * `amount` - The transaction amount
 /// * `fee_config` - The fee configuration to use
-/// 
+///
 /// # Returns
 /// * `FeeCalculationResult` containing the calculated fee and net amount
 pub fn calculate_transaction_fee(env: &Env, amount: i128, fee_config: &FeeConfig) -> FeeCalculationResult {
     if is_fee_paused(env) || amount <= 0 {
+pub fn calculate_transaction_fee(
+    env: &Env,
+    amount: i128,
+    fee_config: &FeeConfig,
+) -> FeeCalculationResult {
+    if amount <= 0 {
         return FeeCalculationResult {
             gross_amount: amount,
             fee_amount: 0,
@@ -90,15 +100,11 @@ pub fn calculate_transaction_fee(env: &Env, amount: i128, fee_config: &FeeConfig
     }
 
     let fee_amount = match &fee_config.fee_model {
-        crate::types::FeeModel::Flat(flat_fee) => {
-            *flat_fee
-        },
+        crate::types::FeeModel::Flat(flat_fee) => *flat_fee,
         crate::types::FeeModel::Percentage(percentage_bps) => {
             (amount * (*percentage_bps as i128)) / 10000
-        },
-        crate::types::FeeModel::Tiered(tiers) => {
-            calculate_tiered_fee(amount, tiers)
-        },
+        }
+        crate::types::FeeModel::Tiered(tiers) => calculate_tiered_fee(amount, tiers),
     };
 
     // Apply min and max fee constraints
@@ -106,7 +112,7 @@ pub fn calculate_transaction_fee(env: &Env, amount: i128, fee_config: &FeeConfig
 
     // Ensure fee doesn't exceed the transaction amount
     let final_fee = if constrained_fee > amount {
-        amount  // Cap fee at the transaction amount
+        amount // Cap fee at the transaction amount
     } else {
         constrained_fee
     };
@@ -133,7 +139,7 @@ fn calculate_tiered_fee(amount: i128, tiers: &Vec<FeeTier>) -> i128 {
 
     // Find the appropriate tier based on amount
     let mut applicable_tier = &tiers.get(0).unwrap(); // Default to first tier
-    
+
     for tier in tiers.iter() {
         if amount >= tier.threshold {
             applicable_tier = tier;
@@ -147,11 +153,11 @@ fn calculate_tiered_fee(amount: i128, tiers: &Vec<FeeTier>) -> i128 {
         crate::types::FeeModel::Flat(flat_fee) => *flat_fee,
         crate::types::FeeModel::Percentage(percentage_bps) => {
             (amount * (*percentage_bps as i128)) / 10000
-        },
+        }
         crate::types::FeeModel::Tiered(_) => {
             // Nested tiered fees not supported, fall back to percentage
             (amount * (applicable_tier.default_percentage_bps as i128)) / 10000
-        },
+        }
     }
 }
 
@@ -179,20 +185,24 @@ fn calculate_effective_rate(gross_amount: i128, fee_amount: i128) -> u32 {
     if gross_amount == 0 {
         return 0;
     }
-    
+
     // Calculate as (fee_amount * 10000) / gross_amount to get basis points
     ((fee_amount * 10000) / gross_amount) as u32
 }
 
 /// Calculates fees for multiple transactions
-pub fn calculate_batch_fees(env: &Env, amounts: &[i128], fee_config: &FeeConfig) -> Vec<FeeCalculationResult> {
+pub fn calculate_batch_fees(
+    env: &Env,
+    amounts: &[i128],
+    fee_config: &FeeConfig,
+) -> Vec<FeeCalculationResult> {
     let mut results = Vec::new(env);
-    
+
     for &amount in amounts {
         let result = calculate_transaction_fee(env, amount, fee_config);
         results.push_back(result);
     }
-    
+
     results
 }
 
@@ -201,27 +211,29 @@ pub fn validate_fee_config(config: &FeeConfig) -> Result<(), ValidationError> {
     // Validate percentage is not over 100% (10000 basis points)
     match &config.fee_model {
         crate::types::FeeModel::Percentage(percentage_bps) => {
-            if *percentage_bps > 10000 {  // More than 100%
+            if *percentage_bps > 10000 {
+                // More than 100%
                 return Err(ValidationError::InvalidPercentage);
             }
-        },
+        }
         crate::types::FeeModel::Tiered(tiers) => {
             // Validate each tier
             for tier in tiers.iter() {
                 if tier.threshold < 0 {
                     return Err(ValidationError::InvalidAmount);
                 }
-                
+
                 match &tier.fee_model {
                     crate::types::FeeModel::Percentage(percentage_bps) => {
-                        if *percentage_bps > 10000 {  // More than 100%
+                        if *percentage_bps > 10000 {
+                            // More than 100%
                             return Err(ValidationError::InvalidPercentage);
                         }
-                    },
+                    }
                     _ => {} // Other models have different validation
                 }
             }
-            
+
             // Validate tiers are in ascending order
             let mut prev_threshold = 0i128;
             for tier in tiers.iter() {
@@ -230,19 +242,21 @@ pub fn validate_fee_config(config: &FeeConfig) -> Result<(), ValidationError> {
                 }
                 prev_threshold = tier.threshold;
             }
-        },
+        }
         _ => {}
     }
 
     // Validate min/max fees
     if let Some(min_fee) = config.min_fee {
-        if min_fee > i64::MAX as u64 {  // Prevent overflow
+        if min_fee > i64::MAX as u64 {
+            // Prevent overflow
             return Err(ValidationError::InvalidAmount);
         }
     }
 
     if let Some(max_fee) = config.max_fee {
-        if max_fee > i64::MAX as u64 {  // Prevent overflow
+        if max_fee > i64::MAX as u64 {
+            // Prevent overflow
             return Err(ValidationError::InvalidAmount);
         }
     }
@@ -260,8 +274,10 @@ pub fn validate_fee_config(config: &FeeConfig) -> Result<(), ValidationError> {
 /// Stores the fee configuration in persistent storage
 pub fn store_fee_config(env: &Env, config: &FeeConfig) -> Result<(), ValidationError> {
     validate_fee_config(config)?;
-    
-    env.storage().instance().set(&DataKey::CurrentFeeConfig, config);
+
+    env.storage()
+        .instance()
+        .set(&DataKey::CurrentFeeConfig, config);
     Ok(())
 }
 
@@ -284,46 +300,55 @@ pub fn store_operation_fee_config(env: &Env, operation: &Symbol, config: &FeeCon
 
 /// Deducts fees from a transaction amount and returns the net amount
 pub fn deduct_fees(env: &Env, gross_amount: i128) -> FeeCalculationResult {
-    let config = get_current_fee_config(env)
-        .unwrap_or(default_fee_config()); // Use default if none configured
-    
+    let config = get_current_fee_config(env).unwrap_or(default_fee_config()); // Use default if none configured
+
     let result = calculate_transaction_fee(env, gross_amount, &config);
-    
+
     // Emit fee deduction event
-    AnalyticsEvents::fee_deducted(env, result.gross_amount, result.fee_amount, result.net_amount, result.fee_percentage_bps);
-    
+    AnalyticsEvents::fee_deducted(
+        env,
+        result.gross_amount,
+        result.fee_amount,
+        result.net_amount,
+        result.fee_percentage_bps,
+    );
+
     result
 }
 
 /// Creates a default fee configuration (0.1% flat fee)
 fn default_fee_config() -> FeeConfig {
     use crate::types::FeeModel;
-    
+
     FeeConfig {
         fee_model: FeeModel::Percentage(10), // 0.1% = 10 basis points
-        min_fee: Some(1),                   // Minimum 1 stroop
-        max_fee: None,                      // No maximum
+        min_fee: Some(1),                    // Minimum 1 stroop
+        max_fee: None,                       // No maximum
         enabled: true,
         description: Some(Symbol::new(&Env::default(), "Default 0.1% fee")),
     }
 }
 
 /// Updates fee configuration with validation
-pub fn update_fee_config(env: &Env, admin: &Address, new_config: FeeConfig) -> Result<(), ValidationError> {
+pub fn update_fee_config(
+    env: &Env,
+    admin: &Address,
+    new_config: FeeConfig,
+) -> Result<(), ValidationError> {
     // Verify caller is admin
     let stored_admin: Address = env
         .storage()
         .instance()
         .get(&DataKey::Admin)
         .expect("Contract not initialized");
-    
+
     if *admin != stored_admin {
         return Err(ValidationError::InvalidAddress); // Reusing error type
     }
-    
+
     validate_fee_config(&new_config)?;
     store_fee_config(env, &new_config)?;
-    
+
     Ok(())
 }
 
@@ -354,8 +379,8 @@ pub fn update_operation_fee_config(env: &Env, admin: &Address, operation: &Symbo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{Env, testutils::Address as _};
     use crate::types::{FeeModel, FeeTier};
+    use soroban_sdk::{testutils::Address as _, Env};
 
     #[test]
     fn test_flat_fee_calculation() {
@@ -434,7 +459,7 @@ mod tests {
     #[test]
     fn test_tiered_fee_calculation() {
         let env = Env::default();
-        
+
         // Create a tiered fee structure: 0-100: 1%, 101+: 0.5%
         let mut tiers = Vec::new(&env);
         tiers.push_back(FeeTier {
@@ -539,4 +564,5 @@ mod tests {
         let result_resumed = crate::fees::calculate_transaction_fee(&env, 10000, &config);
         assert_eq!(result_resumed.fee_amount, 100);
     }
+}
 }

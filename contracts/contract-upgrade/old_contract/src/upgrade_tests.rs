@@ -81,7 +81,10 @@ fn test_second_upgrade_fails_without_migration() {
     let new_client = new_contract::Client::new(&env, &contract_id);
     // NewAdmin key not set yet, second upgrade should fail
     let result = new_client.try_upgrade(&new_wasm_hash);
-    assert!(result.is_err(), "upgrade should fail without handle_upgrade");
+    assert!(
+        result.is_err(),
+        "upgrade should fail without handle_upgrade"
+    );
 }
 
 // Test 5: handle_upgrade properly migrates state
@@ -97,5 +100,8 @@ fn test_handle_upgrade_migrates_state() {
     new_client.handle_upgrade();
     // after migration, upgrade should succeed
     let result = new_client.try_upgrade(&new_wasm_hash);
-    assert!(result.is_ok(), "upgrade should succeed after handle_upgrade");
+    assert!(
+        result.is_ok(),
+        "upgrade should succeed after handle_upgrade"
+    );
 }

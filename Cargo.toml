@@ -21,11 +21,26 @@ members = [
     "contracts/budget-allocation",
     "contracts/recurring-payment",
     "contracts/batch-token-mint",
-    "contracts/cross-contract",
+    "contracts/asset_control",
     "contracts/access-control",
-    "contracts/pausable",
-    "contracts/audit",
 ]
+
+[package]
+name = "stellarspend-contracts-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[[test]]
+name = "snapshot_tests"
+path = "tests/snapshot_tests.rs"
+
+[[test]]
+name = "memo_tests"
+path = "tests/memo_tests.rs"
 
 [workspace.package]
 version = "0.1.0"

@@ -234,7 +234,7 @@ pub enum DataKey {
     Rating(u64, Address),
     /// Stored status per transaction ID
     TransactionStatus(u64),
-    
+
     /// Monthly spending analytics for a user (year, month, user)
     MonthlyAnalytics(u32, u32, Address),
     /// User spending summary
@@ -430,7 +430,7 @@ pub struct MonthlySpendingAnalytics {
     /// Total spending for the month
     pub total_spending: i128,
     /// Map of category spending
-    pub category_spending: Vec<(Symbol, i128)>,  // Changed from Map to Vec for contracttype compatibility
+    pub category_spending: Vec<(Symbol, i128)>, // Changed from Map to Vec for contracttype compatibility
     /// Number of transactions in the period
     pub transaction_count: u32,
 }
@@ -463,11 +463,11 @@ impl AnalyticsEvents {
 
     /// Event emitted for each category in a batch.
     pub fn category_analytics(env: &Env, batch_id: u64, category_metrics: &CategoryMetrics) {
-        let topics = (
-            symbol_short!("category"),
-            batch_id,
+        let topics = (symbol_short!("category"), batch_id);
+        env.events().publish(
+            topics,
+            (category_metrics.category.clone(), category_metrics.clone()),
         );
-        env.events().publish(topics, (category_metrics.category.clone(), category_metrics.clone()));
     }
 
     /// Event emitted when analytics computation starts.
@@ -491,7 +491,8 @@ impl AnalyticsEvents {
     /// Event emitted when an audit log is created.
     pub fn audit_logged(env: &Env, actor: &Address, operation: &Symbol, status: &Symbol) {
         let topics = (symbol_short!("audit"), symbol_short!("log"));
-        env.events().publish(topics, (actor.clone(), operation.clone(), status.clone()));
+        env.events()
+            .publish(topics, (actor.clone(), operation.clone(), status.clone()));
     }
 
     /// Event emitted when a rating is submitted.
@@ -513,7 +514,8 @@ impl AnalyticsEvents {
         new_status: TransactionStatus,
     ) {
         let topics = (symbol_short!("status"), symbol_short!("updated"));
-        env.events().publish(topics, (tx_id, previous_status, new_status));
+        env.events()
+            .publish(topics, (tx_id, previous_status, new_status));
     }
 
     pub fn transaction_status_update_failed(env: &Env, tx_id: u64) {
@@ -564,7 +566,8 @@ impl AnalyticsEvents {
     /// Event emitted when a transaction fails validation in a bundle.
     pub fn transaction_validation_failed(env: &Env, bundle_id: u64, tx_id: u64, error: &Symbol) {
         let topics = (symbol_short!("bundle"), symbol_short!("failed"));
-        env.events().publish(topics, (bundle_id, tx_id, error.clone()));
+        env.events()
+            .publish(topics, (bundle_id, tx_id, error.clone()));
     }
 
     /// Event emitted when a refund batch processing starts.
@@ -575,13 +578,21 @@ impl AnalyticsEvents {
 
     /// Event emitted for each individual refund result.
     pub fn refund_processed(env: &Env, batch_id: u64, refund_result: &RefundResult) {
-        let topics = (symbol_short!("refund"), symbol_short!("processed"), batch_id);
+        let topics = (
+            symbol_short!("refund"),
+            symbol_short!("processed"),
+            batch_id,
+        );
         env.events().publish(topics, refund_result.clone());
     }
 
     /// Event emitted when a refund batch completes.
     pub fn refund_batch_completed(env: &Env, batch_id: u64, metrics: &RefundBatchMetrics) {
-        let topics = (symbol_short!("refund"), symbol_short!("completed"), batch_id);
+        let topics = (
+            symbol_short!("refund"),
+            symbol_short!("completed"),
+            batch_id,
+        );
         env.events().publish(topics, metrics.clone());
     }
 
@@ -590,7 +601,7 @@ impl AnalyticsEvents {
         let topics = (symbol_short!("refund"), symbol_short!("error"));
         env.events().publish(topics, (batch_id, tx_id, error_msg));
     }
-    
+
     /// Event emitted when analytics are updated for a user.
     pub fn analytics_updated(
         env: &Env,
@@ -600,9 +611,17 @@ impl AnalyticsEvents {
         analytics: &MonthlySpendingAnalytics,
     ) {
         let topics = (symbol_short!("analytics"), symbol_short!("updated"), user);
-        env.events().publish(topics, (year, month, analytics.total_spending, analytics.transaction_count));
+        env.events().publish(
+            topics,
+            (
+                year,
+                month,
+                analytics.total_spending,
+                analytics.transaction_count,
+            ),
+        );
     }
-    
+
     /// Event emitted when a fee is deducted from a transaction.
     pub fn fee_deducted(
         env: &Env,
@@ -612,7 +631,10 @@ impl AnalyticsEvents {
         fee_percentage_bps: u32,
     ) {
         let topics = (symbol_short!("fee"), symbol_short!("deducted"));
-        env.events().publish(topics, (gross_amount, fee_amount, net_amount, fee_percentage_bps));
+        env.events().publish(
+            topics,
+            (gross_amount, fee_amount, net_amount, fee_percentage_bps),
+        );
     }
 
     /// Event emitted for each fee distribution to a recipient.

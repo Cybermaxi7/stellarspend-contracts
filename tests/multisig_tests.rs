@@ -1,8 +1,7 @@
 use soroban_sdk::{
-    TryFromVal,
     symbol_short,
     testutils::{Address as _, Events as _},
-    Address, Env, Symbol, Vec,
+    Address, Env, Symbol, TryFromVal, Vec,
 };
 
 #[path = "../contracts/transactions.rs"]
@@ -348,22 +347,16 @@ fn test_emits_approval_and_execution_events() {
     let approval_events = events
         .iter()
         .filter(|event| {
-            let has_approve = event
-                .1
-                .iter()
-                .any(|topic| {
-                    Symbol::try_from_val(&env, &topic)
-                        .map(|sym| sym == approve_sym)
-                        .unwrap_or(false)
-                });
-            let has_record = event
-                .1
-                .iter()
-                .any(|topic| {
-                    Symbol::try_from_val(&env, &topic)
-                        .map(|sym| sym == record_sym)
-                        .unwrap_or(false)
-                });
+            let has_approve = event.1.iter().any(|topic| {
+                Symbol::try_from_val(&env, &topic)
+                    .map(|sym| sym == approve_sym)
+                    .unwrap_or(false)
+            });
+            let has_record = event.1.iter().any(|topic| {
+                Symbol::try_from_val(&env, &topic)
+                    .map(|sym| sym == record_sym)
+                    .unwrap_or(false)
+            });
             has_approve && has_record
         })
         .count();
@@ -371,14 +364,11 @@ fn test_emits_approval_and_execution_events() {
     let execution_events = events
         .iter()
         .filter(|event| {
-            event
-                .1
-                .iter()
-                .any(|topic| {
-                    Symbol::try_from_val(&env, &topic)
-                        .map(|sym| sym == executed_sym)
-                        .unwrap_or(false)
-                })
+            event.1.iter().any(|topic| {
+                Symbol::try_from_val(&env, &topic)
+                    .map(|sym| sym == executed_sym)
+                    .unwrap_or(false)
+            })
         })
         .count();
 

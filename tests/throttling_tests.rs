@@ -8,8 +8,8 @@ use soroban_sdk::{
 mod throttling;
 
 use throttling::{
-    ThrottleContract, ThrottleContractClient, ThrottleError, ThrottleConfig, ThrottleResult,
-    WalletThrottleState, ThrottleViolation, GlobalThrottleStats, ThrottleReason, TimeWindow,
+    GlobalThrottleStats, ThrottleConfig, ThrottleContract, ThrottleContractClient, ThrottleError,
+    ThrottleReason, ThrottleResult, ThrottleViolation, TimeWindow, WalletThrottleState,
 };
 
 fn setup_throttle_contract() -> (Env, Address, ThrottleContractClient<'static>) {
@@ -56,7 +56,7 @@ fn test_throttle_initialization() {
     let (env, admin, client) = setup_throttle_contract();
 
     assert_eq!(client.get_admin(), admin);
-    
+
     let config = client.get_throttle_config();
     assert_eq!(config.max_transactions_per_window, 5);
     assert_eq!(config.window_size_seconds, 60);
@@ -201,7 +201,11 @@ fn test_exempt_wallet_not_throttled() {
     // Should be allowed regardless of frequency
     for i in 0..10 {
         let result = client.check_transaction_throttle(&exempt_wallet);
-        assert!(result.allowed, "Exempt transaction {} should be allowed", i + 1);
+        assert!(
+            result.allowed,
+            "Exempt transaction {} should be allowed",
+            i + 1
+        );
         assert_eq!(result.reason, ThrottleReason::WalletExempt);
     }
 
@@ -223,7 +227,11 @@ fn test_disabled_system_allows_all_transactions() {
     // Should allow all transactions regardless of limits
     for i in 0..10 {
         let result = client.check_transaction_throttle(&wallet);
-        assert!(result.allowed, "Disabled system transaction {} should be allowed", i + 1);
+        assert!(
+            result.allowed,
+            "Disabled system transaction {} should be allowed",
+            i + 1
+        );
         assert_eq!(result.reason, ThrottleReason::SystemDisabled);
     }
 }
@@ -284,7 +292,9 @@ fn test_wallet_throttle_info() {
         client.check_transaction_throttle(&wallet);
     }
 
-    let info = client.get_wallet_throttle_info(&wallet).expect("Wallet info should exist");
+    let info = client
+        .get_wallet_throttle_info(&wallet)
+        .expect("Wallet info should exist");
     assert_eq!(info.wallet_address, wallet);
     assert_eq!(info.transaction_count, 3);
     assert_eq!(info.total_transactions_all_time, 3);
@@ -361,7 +371,8 @@ fn test_force_cleanup_admin_only() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("cleanup") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("cleanup")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -427,7 +438,8 @@ fn test_throttle_events_emitted() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("allowed") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("allowed")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -451,7 +463,8 @@ fn test_throttle_triggered_events() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("triggered") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("triggered")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -481,7 +494,8 @@ fn test_throttle_lifted_events() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("lifted") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("lifted")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -643,7 +657,9 @@ fn test_edge_case_multiple_violations() {
         client.check_transaction_throttle(&wallet);
     }
 
-    let info = client.get_wallet_throttle_info(&wallet).expect("Wallet info should exist");
+    let info = client
+        .get_wallet_throttle_info(&wallet)
+        .expect("Wallet info should exist");
     assert_eq!(info.violation_count, 2);
 }
 

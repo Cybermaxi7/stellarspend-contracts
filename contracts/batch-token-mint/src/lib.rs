@@ -27,8 +27,8 @@ mod validation;
 use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, Vec};
 
 pub use crate::types::{
-    BatchMintMetrics, BatchMintResult, DataKey, ErrorCode, MintEvents, MintResult, TokenMinted,
-    TokenMintRequest, MAX_BATCH_SIZE,
+    BatchMintMetrics, BatchMintResult, DataKey, ErrorCode, MintEvents, MintResult,
+    TokenMintRequest, TokenMinted, MAX_BATCH_SIZE,
 };
 use crate::validation::validate_mint_request;
 
@@ -153,7 +153,7 @@ impl BatchTokenMintContract {
                     // Note: In a real implementation, this would call token_client.mint()
                     // For now, we simulate successful minting
                     // In production, this would interact with the actual token contract
-                    
+
                     let minted = TokenMinted {
                         token_address: token.clone(),
                         recipient: request.recipient.clone(),
@@ -188,18 +188,9 @@ impl BatchTokenMintContract {
                     failed_count += 1;
 
                     // Emit failure event
-                    MintEvents::mint_failed(
-                        &env,
-                        batch_id,
-                        &token,
-                        &request.recipient,
-                        error_code,
-                    );
+                    MintEvents::mint_failed(&env, batch_id, &token, &request.recipient, error_code);
 
-                    results.push_back(MintResult::Failure(
-                        request.recipient.clone(),
-                        error_code,
-                    ));
+                    results.push_back(MintResult::Failure(request.recipient.clone(), error_code));
                 }
             }
         }
@@ -236,10 +227,9 @@ impl BatchTokenMintContract {
         env.storage()
             .instance()
             .set(&DataKey::LastBatchId, &batch_id);
-        env.storage().instance().set(
-            &DataKey::TotalMinted,
-            &(total_minted + total_amount_minted),
-        );
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalMinted, &(total_minted + total_amount_minted));
         env.storage()
             .instance()
             .set(&DataKey::TotalBatchesProcessed, &(total_batches + 1));

@@ -1,4 +1,3 @@
-
 #![cfg(test)]
 
 use recurring_payment::RecurringPaymentContractClient;
@@ -11,7 +10,9 @@ fn setup_token<'a>(
     env: &'a Env,
     admin: &Address,
 ) -> (Address, token::StellarAssetClient<'a>, token::Client<'a>) {
-    let addr = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let addr = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let admin_client = token::StellarAssetClient::new(env, &addr);
     let client = token::Client::new(env, &addr);
     (addr, admin_client, client)
@@ -91,7 +92,14 @@ fn test_execute_too_early() {
     let contract = setup_contract(&env);
 
     let start_time: u64 = 5_000;
-    contract.create_payment(&sender, &recipient, &token_addr, &1_000, &3_600, &start_time);
+    contract.create_payment(
+        &sender,
+        &recipient,
+        &token_addr,
+        &1_000,
+        &3_600,
+        &start_time,
+    );
 
     env.ledger().set_timestamp(start_time - 1);
     contract.execute_payment(&1);
@@ -114,7 +122,14 @@ fn test_execute_overdue_skips_to_next_future_interval() {
     let interval: u64 = 3_600;
     let start_time: u64 = 1_000;
 
-    contract.create_payment(&sender, &recipient, &token_addr, &1_000, &interval, &start_time);
+    contract.create_payment(
+        &sender,
+        &recipient,
+        &token_addr,
+        &1_000,
+        &interval,
+        &start_time,
+    );
 
     // 2.5 intervals after start_time
     env.ledger().set_timestamp(start_time + interval * 2 + 500);
@@ -148,7 +163,14 @@ fn test_execute_one_full_interval_late() {
     let interval: u64 = 3_600;
     let start_time: u64 = 1_000;
 
-    contract.create_payment(&sender, &recipient, &token_addr, &1_000, &interval, &start_time);
+    contract.create_payment(
+        &sender,
+        &recipient,
+        &token_addr,
+        &1_000,
+        &interval,
+        &start_time,
+    );
 
     // Exactly one full interval late
     env.ledger().set_timestamp(start_time + interval);
@@ -181,8 +203,8 @@ fn test_cancel_by_non_owner_panics() {
     // We have to call the raw contract; easiest is to just use the same client
     // which will fail auth because `attacker` did not require_auth here.
     let _ = attacker; // silence unused warning
-    // The contract's cancel_payment calls payment.sender.require_auth(), which
-    // will fail because the invocation isn't authorised by `sender`.
+                      // The contract's cancel_payment calls payment.sender.require_auth(), which
+                      // will fail because the invocation isn't authorised by `sender`.
     contract.cancel_payment(&1);
 }
 
@@ -224,7 +246,14 @@ fn test_execute_cancelled_payment_panics() {
     let start_time: u64 = 1_000;
     let interval: u64 = 3_600;
 
-    contract.create_payment(&sender, &recipient, &token_addr, &1_000, &interval, &start_time);
+    contract.create_payment(
+        &sender,
+        &recipient,
+        &token_addr,
+        &1_000,
+        &interval,
+        &start_time,
+    );
     contract.cancel_payment(&1);
 
     env.ledger().set_timestamp(start_time + interval);
@@ -302,12 +331,8 @@ fn test_multiple_independent_payments() {
 
     let contract = setup_contract(&env);
 
-    let id_a = contract.create_payment(
-        &sender_a, &recipient, &token_addr, &1_000, &3_600, &1_000,
-    );
-    let id_b = contract.create_payment(
-        &sender_b, &recipient, &token_addr, &2_000, &7_200, &2_000,
-    );
+    let id_a = contract.create_payment(&sender_a, &recipient, &token_addr, &1_000, &3_600, &1_000);
+    let id_b = contract.create_payment(&sender_b, &recipient, &token_addr, &2_000, &7_200, &2_000);
 
     assert_eq!(id_a, 1);
     assert_eq!(id_b, 2);
@@ -338,14 +363,10 @@ fn test_payment_ids_are_sequential() {
     let contract = setup_contract(&env);
 
     for expected_id in 1u64..=5 {
-        let id = contract.create_payment(
-            &sender, &recipient, &token, &100, &3_600, &1_000,
-        );
+        let id = contract.create_payment(&sender, &recipient, &token, &100, &3_600, &1_000);
         assert_eq!(id, expected_id);
     }
 }
-
-
 
 /// Creating a payment emits a ("recur", "created", id) event.
 #[test]
@@ -429,7 +450,14 @@ fn test_repeated_executions_across_intervals() {
     let start_time: u64 = 1_000;
     let amount: i128 = 500;
 
-    contract.create_payment(&sender, &recipient, &token_addr, &amount, &interval, &start_time);
+    contract.create_payment(
+        &sender,
+        &recipient,
+        &token_addr,
+        &amount,
+        &interval,
+        &start_time,
+    );
 
     for i in 0u64..4 {
         env.ledger().set_timestamp(start_time + i * interval);

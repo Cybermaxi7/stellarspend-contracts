@@ -75,16 +75,21 @@ pub fn validate_reversal(
         EscrowStatus::Active => {}
     }
 
-    // Check authorization: admin or depositor can reverse
+    // Check authorization: admin, depositor or arbiter can reverse
     let is_admin = caller == admin;
     let is_depositor = caller == &escrow.depositor;
+    let is_arbiter = if let Some(arb) = &escrow.arbiter {
+        caller == arb
+    } else {
+        false
+    };
 
-    if !is_admin && !is_depositor {
+    if !is_admin && !is_depositor && !is_arbiter {
         return Err(ValidationError::Unauthorized);
     }
 
-    // If not admin and deadline check is enabled, verify deadline has passed
-    if check_deadline && !is_admin && current_ledger < escrow.deadline {
+    // If not admin and not arbiter and deadline check is enabled, verify deadline has passed
+    if check_deadline && !is_admin && !is_arbiter && current_ledger < escrow.deadline {
         return Err(ValidationError::DeadlineNotReached);
     }
 
@@ -94,7 +99,11 @@ pub fn validate_reversal(
 /// Validates whether an escrow can be released.
 ///
 /// Rules: escrow must exist, be active, and caller must be admin or the depositor.
-pub fn validate_release(escrow: Option<&Escrow>, caller: &Address, admin: &Address) -> Result<(), ValidationError> {
+pub fn validate_release(
+    escrow: Option<&Escrow>,
+    caller: &Address,
+    admin: &Address,
+) -> Result<(), ValidationError> {
     let escrow = escrow.ok_or(ValidationError::EscrowNotFound)?;
 
     match escrow.status {
@@ -105,13 +114,18 @@ pub fn validate_release(escrow: Option<&Escrow>, caller: &Address, admin: &Addre
 
     let is_admin = caller == admin;
     let is_depositor = caller == &escrow.depositor;
-    if !is_admin && !is_depositor {
+    let is_arbiter = if let Some(arb) = &escrow.arbiter {
+        caller == arb
+    } else {
+        false
+    };
+
+    if !is_admin && !is_depositor && !is_arbiter {
         return Err(ValidationError::Unauthorized);
     }
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -123,6 +137,7 @@ mod tests {
             escrow_id: 1,
             depositor: Address::generate(env),
             recipient: Address::generate(env),
+            arbiter: None,
             token: Address::generate(env),
             amount: 1000,
             status,
@@ -236,10 +251,25 @@ mod tests {
 
     #[test]
     fn test_error_code_conversion() {
-        assert_eq!(ValidationError::EscrowNotFound.to_error_code(), ErrorCode::ESCROW_NOT_FOUND);
-        assert_eq!(ValidationError::AlreadyReleased.to_error_code(), ErrorCode::ALREADY_RELEASED);
-        assert_eq!(ValidationError::AlreadyReversed.to_error_code(), ErrorCode::ALREADY_REVERSED);
-        assert_eq!(ValidationError::Unauthorized.to_error_code(), ErrorCode::UNAUTHORIZED);
-        assert_eq!(ValidationError::DeadlineNotReached.to_error_code(), ErrorCode::DEADLINE_NOT_REACHED);
+        assert_eq!(
+            ValidationError::EscrowNotFound.to_error_code(),
+            ErrorCode::ESCROW_NOT_FOUND
+        );
+        assert_eq!(
+            ValidationError::AlreadyReleased.to_error_code(),
+            ErrorCode::ALREADY_RELEASED
+        );
+        assert_eq!(
+            ValidationError::AlreadyReversed.to_error_code(),
+            ErrorCode::ALREADY_REVERSED
+        );
+        assert_eq!(
+            ValidationError::Unauthorized.to_error_code(),
+            ErrorCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            ValidationError::DeadlineNotReached.to_error_code(),
+            ErrorCode::DEADLINE_NOT_REACHED
+        );
     }
 }

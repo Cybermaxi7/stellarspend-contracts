@@ -1,18 +1,21 @@
 //! # Input Validation Module
-//! 
+//!
 //! Implements strict validation for all public inputs in the transaction analytics contract.
 //! Provides standardized validation functions for addresses, amounts, assets, and other inputs.
 
-use soroban_sdk::{Address, Env, String, symbol_short, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
 
-use crate::types::{Transaction, RefundRequest, RatingInput, TransactionStatusUpdate, BundledTransaction, ValidationError};
+use crate::types::{
+    BundledTransaction, RatingInput, RefundRequest, Transaction, TransactionStatusUpdate,
+    ValidationError,
+};
 
 /// Validates an address input ensuring it's not empty/null.
-/// 
+///
 /// # Arguments
 /// * `env` - The contract environment
 /// * `address` - The address to validate
-/// 
+///
 /// # Returns
 /// * `Ok(())` if valid, `Err(ValidationError)` if invalid
 pub fn validate_address(env: &Env, address: &Address) -> Result<(), ValidationError> {
@@ -21,22 +24,22 @@ pub fn validate_address(env: &Env, address: &Address) -> Result<(), ValidationEr
     if address.is_none() {
         return Err(ValidationError::InvalidAddress);
     }
-    
+
     Ok(())
 }
 
 /// Validates a transaction amount ensuring it's positive and not zero.
-/// 
+///
 /// # Arguments
 /// * `amount` - The amount to validate
-/// 
+///
 /// # Returns
 /// * `Ok(())` if valid, `Err(ValidationError)` if invalid
 pub fn validate_amount(amount: i128) -> Result<(), ValidationError> {
     if amount <= 0 {
         return Err(ValidationError::InvalidAmount);
     }
-    
+
     Ok(())
 }
 
@@ -53,18 +56,19 @@ pub fn validate_transaction(transaction: &Transaction) -> Result<(), ValidationE
     validate_address(&transaction.from)?;
     validate_address(&transaction.to)?;
     validate_amount(transaction.amount)?;
-    
+
     // Validate timestamp is not in the future (within reasonable tolerance)
     let current_ledger = transaction.timestamp; // This would be env.ledger().sequence() in real usage
-    if transaction.timestamp > current_ledger + 100000 { // Allow some future tolerance
+    if transaction.timestamp > current_ledger + 100000 {
+        // Allow some future tolerance
         return Err(ValidationError::InvalidTimestamp);
     }
-    
+
     // Validate category is not empty
     if transaction.category.to_str().len() == 0 {
         return Err(ValidationError::InvalidCategory);
     }
-    
+
     Ok(())
 }
 
@@ -73,16 +77,17 @@ pub fn validate_transactions(transactions: &Vec<Transaction>) -> Result<(), Vali
     if transactions.is_empty() {
         return Err(ValidationError::EmptyBatch);
     }
-    
+
     // Check for reasonable batch size
-    if transactions.len() > 100 {  // Assuming MAX_BATCH_SIZE is 100
+    if transactions.len() > 100 {
+        // Assuming MAX_BATCH_SIZE is 100
         return Err(ValidationError::BatchTooLarge);
     }
-    
+
     for transaction in transactions.iter() {
         validate_transaction(transaction)?;
     }
-    
+
     Ok(())
 }
 
@@ -92,17 +97,18 @@ pub fn validate_refund_request(request: &RefundRequest) -> Result<(), Validation
     if request.tx_id == 0 {
         return Err(ValidationError::InvalidTransactionId);
     }
-    
+
     // Validate reason if provided
     if let Some(reason) = &request.reason {
         if reason.to_str().len() == 0 {
             return Err(ValidationError::InvalidReason);
         }
-        if reason.to_str().len() > 255 { // Arbitrary limit for reason length
+        if reason.to_str().len() > 255 {
+            // Arbitrary limit for reason length
             return Err(ValidationError::InvalidReason);
         }
     }
-    
+
     Ok(())
 }
 
@@ -111,12 +117,13 @@ pub fn validate_refund_requests(requests: &Vec<RefundRequest>) -> Result<(), Val
     if requests.is_empty() {
         return Err(ValidationError::EmptyBatch);
     }
-    
+
     // Check for reasonable batch size
-    if requests.len() > 100 {  // Assuming MAX_BATCH_SIZE is 100
+    if requests.len() > 100 {
+        // Assuming MAX_BATCH_SIZE is 100
         return Err(ValidationError::BatchTooLarge);
     }
-    
+
     // Check for duplicate transaction IDs
     let mut seen_tx_ids = std::collections::HashSet::new();
     for request in requests.iter() {
@@ -126,7 +133,7 @@ pub fn validate_refund_requests(requests: &Vec<RefundRequest>) -> Result<(), Val
         seen_tx_ids.insert(request.tx_id);
         validate_refund_request(request)?;
     }
-    
+
     Ok(())
 }
 
@@ -136,12 +143,12 @@ pub fn validate_rating_input(rating: &RatingInput) -> Result<(), ValidationError
     if rating.tx_id == 0 {
         return Err(ValidationError::InvalidTransactionId);
     }
-    
+
     // Validate rating score is within acceptable range (e.g., 1-5)
     if rating.score == 0 || rating.score > 5 {
         return Err(ValidationError::InvalidRating);
     }
-    
+
     Ok(())
 }
 
@@ -150,40 +157,46 @@ pub fn validate_rating_inputs(inputs: &Vec<RatingInput>) -> Result<(), Validatio
     if inputs.is_empty() {
         return Err(ValidationError::EmptyBatch);
     }
-    
+
     // Check for reasonable batch size
-    if inputs.len() > 100 {  // Assuming MAX_BATCH_SIZE is 100
+    if inputs.len() > 100 {
+        // Assuming MAX_BATCH_SIZE is 100
         return Err(ValidationError::BatchTooLarge);
     }
-    
+
     for input in inputs.iter() {
         validate_rating_input(input)?;
     }
-    
+
     Ok(())
 }
 
 /// Validates a transaction status update
-pub fn validate_transaction_status_update(update: &TransactionStatusUpdate) -> Result<(), ValidationError> {
+pub fn validate_transaction_status_update(
+    update: &TransactionStatusUpdate,
+) -> Result<(), ValidationError> {
     // Validate transaction ID is not zero
     if update.tx_id == 0 {
         return Err(ValidationError::InvalidTransactionId);
     }
-    
+
     Ok(())
 }
 
 /// Validates a vector of transaction status updates
-pub fn validate_transaction_status_updates(updates: &Vec<TransactionStatusUpdate>) -> Result<(), ValidationError> {
+pub fn validate_transaction_status_updates(
+    updates: &Vec<TransactionStatusUpdate>,
+) -> Result<(), ValidationError> {
     if updates.is_empty() {
         return Err(ValidationError::EmptyBatch);
     }
-    
+
     // Check for reasonable batch size
-    if updates.len() > 100 {  // Assuming MAX_BATCH_SIZE is 100
+    if updates.len() > 100 {
+        // Assuming MAX_BATCH_SIZE is 100
         return Err(ValidationError::BatchTooLarge);
     }
-    
+
     // Check for duplicate transaction IDs
     let mut seen_tx_ids = std::collections::HashSet::new();
     for update in updates.iter() {
@@ -193,47 +206,53 @@ pub fn validate_transaction_status_updates(updates: &Vec<TransactionStatusUpdate
         seen_tx_ids.insert(update.tx_id);
         validate_transaction_status_update(update)?;
     }
-    
+
     Ok(())
 }
 
 /// Validates a bundled transaction
-pub fn validate_bundled_transaction(bundled_tx: &BundledTransaction) -> Result<(), ValidationError> {
+pub fn validate_bundled_transaction(
+    bundled_tx: &BundledTransaction,
+) -> Result<(), ValidationError> {
     validate_transaction(&bundled_tx.transaction)?;
-    
+
     // Validate that from and to addresses are different
     if bundled_tx.transaction.from == bundled_tx.transaction.to {
         return Err(ValidationError::SameAddress);
     }
-    
+
     // Validate memo if provided
     if let Some(memo) = &bundled_tx.memo {
         if memo.to_str().len() == 0 {
             return Err(ValidationError::InvalidMemo);
         }
-        if memo.to_str().len() > 255 { // Arbitrary limit for memo length
+        if memo.to_str().len() > 255 {
+            // Arbitrary limit for memo length
             return Err(ValidationError::InvalidMemo);
         }
     }
-    
+
     Ok(())
 }
 
 /// Validates a vector of bundled transactions
-pub fn validate_bundled_transactions(bundled_txs: &Vec<BundledTransaction>) -> Result<(), ValidationError> {
+pub fn validate_bundled_transactions(
+    bundled_txs: &Vec<BundledTransaction>,
+) -> Result<(), ValidationError> {
     if bundled_txs.is_empty() {
         return Err(ValidationError::EmptyBatch);
     }
-    
+
     // Check for reasonable batch size
-    if bundled_txs.len() > 100 {  // Assuming MAX_BATCH_SIZE is 100
+    if bundled_txs.len() > 100 {
+        // Assuming MAX_BATCH_SIZE is 100
         return Err(ValidationError::BatchTooLarge);
     }
-    
+
     for bundled_tx in bundled_txs.iter() {
         validate_bundled_transaction(bundled_tx)?;
     }
-    
+
     Ok(())
 }
 
@@ -247,29 +266,33 @@ pub fn validate_year_month(year: u32, month: u32) -> Result<(), ValidationError>
     if year < 2000 || year > 2100 {
         return Err(ValidationError::InvalidYear);
     }
-    
+
     if month < 1 || month > 12 {
         return Err(ValidationError::InvalidMonth);
     }
-    
+
     Ok(())
 }
 
 /// Validates a percentage value (in basis points, 0-10000)
 pub fn validate_percentage_basis_points(bps: u32) -> Result<(), ValidationError> {
-    if bps > 10000 { // 100% = 10000 basis points
+    if bps > 10000 {
+        // 100% = 10000 basis points
         return Err(ValidationError::InvalidPercentage);
     }
-    
+
     Ok(())
 }
 
 /// Validates that two addresses are different
-pub fn validate_different_addresses(addr1: &Address, addr2: &Address) -> Result<(), ValidationError> {
+pub fn validate_different_addresses(
+    addr1: &Address,
+    addr2: &Address,
+) -> Result<(), ValidationError> {
     if addr1 == addr2 {
         return Err(ValidationError::SameAddress);
     }
-    
+
     Ok(())
 }
 
@@ -281,29 +304,32 @@ pub fn validate_asset_type(_asset_identifier: &str) -> Result<(), ValidationErro
     if _asset_identifier.is_empty() {
         return Err(ValidationError::InvalidCategory); // Reusing InvalidCategory for now
     }
-    
+
     // Additional asset validation would go here
     // - Check if asset is registered
     // - Validate asset decimals
     // - Check asset permissions
     // etc.
-    
+
     Ok(())
 }
 
 /// Validates an asset amount with respect to asset properties
 pub fn validate_asset_amount(_asset_identifier: &str, amount: i128) -> Result<(), ValidationError> {
     validate_amount(amount)?;
-    
+
     // Additional asset-specific validations would go here
     // For example, checking if amount exceeds asset supply limits
     // or validating precision based on asset decimals
-    
+
     Ok(())
 }
 
 /// Validates multiple asset amounts
-pub fn validate_asset_amounts(asset_identifier: &str, amounts: &[i128]) -> Result<(), ValidationError> {
+pub fn validate_asset_amounts(
+    asset_identifier: &str,
+    amounts: &[i128],
+) -> Result<(), ValidationError> {
     for &amount in amounts {
         validate_asset_amount(asset_identifier, amount)?;
     }
@@ -313,8 +339,11 @@ pub fn validate_asset_amounts(asset_identifier: &str, amounts: &[i128]) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{
+        BundledTransaction, RatingInput, RefundRequest, Transaction, TransactionStatus,
+        TransactionStatusUpdate,
+    };
     use soroban_sdk::{testutils::Address as _, Env};
-    use crate::types::{TransactionStatus, RatingInput, TransactionStatusUpdate, RefundRequest, BundledTransaction, Transaction};
 
     fn create_test_transaction(env: &Env, tx_id: u64, amount: i128, category: &str) -> Transaction {
         Transaction {
@@ -376,10 +405,7 @@ mod tests {
 
     #[test]
     fn test_validate_rating_input_valid() {
-        let input = RatingInput {
-            tx_id: 1,
-            score: 5,
-        };
+        let input = RatingInput { tx_id: 1, score: 5 };
         assert!(validate_rating_input(&input).is_ok());
     }
 
@@ -440,7 +466,7 @@ mod tests {
     fn test_validate_asset_amounts() {
         let amounts = vec![100, 200, 300];
         assert!(validate_asset_amounts("USDC", &amounts).is_ok());
-        
+
         let invalid_amounts = vec![100, -1, 300]; // Contains negative
         assert!(validate_asset_amounts("USDC", &invalid_amounts).is_err());
     }
@@ -450,7 +476,7 @@ mod tests {
         let env = Env::default();
         let addr1 = Address::generate(&env);
         let addr2 = Address::generate(&env);
-        
+
         assert!(validate_different_addresses(&addr1, &addr2).is_ok());
         assert!(validate_different_addresses(&addr1, &addr1).is_err()); // Same addresses
     }

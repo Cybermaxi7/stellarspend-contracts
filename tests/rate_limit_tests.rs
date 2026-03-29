@@ -50,6 +50,12 @@ fn test_multiple_wallets_independent_limits() {
         assert!(RateLimitContract::check_and_record(env.clone(), wallet1.clone()).is_ok());
         assert!(RateLimitContract::check_and_record(env.clone(), wallet2.clone()).is_ok());
     }
-    assert_eq!(RateLimitContract::check_and_record(env.clone(), wallet1.clone()), Err("rate_limit_exceeded"));
-    assert_eq!(RateLimitContract::check_and_record(env.clone(), wallet2.clone()), Err("rate_limit_exceeded"));
+    assert_eq!(
+        RateLimitContract::check_and_record(env.clone(), wallet1.clone()),
+        Err("rate_limit_exceeded")
+    );
+    assert_eq!(
+        RateLimitContract::check_and_record(env.clone(), wallet2.clone()),
+        Err("rate_limit_exceeded")
+    );
 }

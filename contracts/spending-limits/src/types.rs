@@ -99,6 +99,10 @@ pub enum DataKey {
     TotalLimitsUpdated,
     /// Total batches processed lifetime
     TotalBatchesProcessed,
+    /// Per-user daily spending for a given logical day identifier.
+    DailySpending(Address, u64),
+    /// Per-user monthly spending for a given logical month identifier.
+    MonthlySpending(Address, u64),
 }
 
 /// Error codes for spending limit validation and updates.
@@ -153,5 +157,25 @@ impl LimitEvents {
     pub fn high_value_limit(env: &Env, batch_id: u64, user: &Address, amount: i128) {
         let topics = (symbol_short!("limit"), symbol_short!("highval"), batch_id);
         env.events().publish(topics, (user.clone(), amount));
+    }
+
+    /// Event emitted when a spend attempt exceeds either the daily or monthly limit.
+    pub fn limit_exceeded(
+        env: &Env,
+        user: &Address,
+        attempted_amount: i128,
+        remaining_daily: i128,
+        remaining_monthly: i128,
+    ) {
+        let topics = (symbol_short!("limit"), symbol_short!("exceeded"));
+        env.events().publish(
+            topics,
+            (
+                user.clone(),
+                attempted_amount,
+                remaining_daily,
+                remaining_monthly,
+            ),
+        );
     }
 }

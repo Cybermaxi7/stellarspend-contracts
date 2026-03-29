@@ -352,7 +352,11 @@ fn test_batch_transfer_large_batch() {
     for _i in 0..50 {
         let recipient = Address::generate(&env);
         recipients.push_back(recipient.clone());
-        transfers.push_back(create_transfer_request(&env, recipient, amount_per_recipient));
+        transfers.push_back(create_transfer_request(
+            &env,
+            recipient,
+            amount_per_recipient,
+        ));
         // 0.1 XLM each
     }
 

@@ -1,21 +1,19 @@
 #![cfg(test)]
 
 use super::*;
-use crate::types::{BudgetRequest, CategoryBudgetRequest, BudgetCategory, UserBudgetCategories};
-use soroban_sdk::{
-    testutils::Address as _, vec, Address, Env, Symbol,
-};
+use crate::types::{BudgetCategory, BudgetRequest, CategoryBudgetRequest, UserBudgetCategories};
+use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol};
 
 fn create_contract() -> (Env, Address, Address) {
     let env = Env::default();
     let contract_id = env.register_contract(None, BudgetAllocationContract);
     let client = BudgetAllocationContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
-    
+
     env.mock_all_auths();
     client.initialize(&admin);
-    
+
     (env, contract_id, admin)
 }
 
@@ -34,17 +32,33 @@ impl<'a> BudgetAllocationContractClient<'a> {
         BudgetAllocationContract::initialize(self.env.clone(), admin.clone());
     }
 
-    pub fn batch_allocate_budget(&self, admin: &Address, requests: &Vec<BudgetRequest>) -> crate::types::BatchBudgetResult {
-        BudgetAllocationContract::batch_allocate_budget(self.env.clone(), admin.clone(), requests.clone())
+    pub fn batch_allocate_budget(
+        &self,
+        admin: &Address,
+        requests: &Vec<BudgetRequest>,
+    ) -> crate::types::BatchBudgetResult {
+        BudgetAllocationContract::batch_allocate_budget(
+            self.env.clone(),
+            admin.clone(),
+            requests.clone(),
+        )
     }
 
     pub fn get_budget(&self, user: &Address) -> Option<crate::types::BudgetRecord> {
         BudgetAllocationContract::get_budget(self.env.clone(), user.clone())
     }
 
-    pub fn allocate_budget_by_category(&self, admin: &Address, request: &CategoryBudgetRequest) -> bool {
+    pub fn allocate_budget_by_category(
+        &self,
+        admin: &Address,
+        request: &CategoryBudgetRequest,
+    ) -> bool {
         self.env.as_contract(self.contract_id, || {
-            BudgetAllocationContract::allocate_budget_by_category(self.env.clone(), admin.clone(), request.clone())
+            BudgetAllocationContract::allocate_budget_by_category(
+                self.env.clone(),
+                admin.clone(),
+                request.clone(),
+            )
         })
     }
 }
@@ -134,9 +148,9 @@ fn test_unauthorized_access() {
 fn test_category_budget_allocation_simple() {
     let (env, contract_id, admin) = create_contract();
     let client = BudgetAllocationContractClient::new(&env, &contract_id);
-    
+
     let user = Address::generate(&env);
-    
+
     // Create budget categories
     let categories = vec![
         &env,
@@ -153,17 +167,17 @@ fn test_category_budget_allocation_simple() {
             amount: 150,
         },
     ];
-    
+
     let request = CategoryBudgetRequest {
         user: user.clone(),
         categories: categories.clone(),
         total_amount: 850,
     };
-    
+
     // Test successful allocation using client
     let result = client.allocate_budget_by_category(&admin, &request);
     assert!(result);
-    
+
     // Test legacy budget record is also updated
     let budget_record = client.get_budget(&user);
     assert!(budget_record.is_some());

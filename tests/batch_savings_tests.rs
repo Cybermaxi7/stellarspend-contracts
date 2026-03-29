@@ -9,7 +9,12 @@ fn test_batch_contribute_success() {
     let user = Address::generate(&env);
     let goal_ids = vec![1, 2, 3];
     let amounts = vec![100, 200, 300];
-    let result = SavingsContract::batch_contribute(env.clone(), user.clone(), goal_ids.clone(), amounts.clone());
+    let result = SavingsContract::batch_contribute(
+        env.clone(),
+        user.clone(),
+        goal_ids.clone(),
+        amounts.clone(),
+    );
     assert!(result.is_ok());
     let events = env.events().all();
     assert!(events.iter().any(|e| e.topics.0 == "milestone"));
@@ -21,7 +26,12 @@ fn test_goal_amount_mismatch() {
     let user = Address::generate(&env);
     let goal_ids = vec![1, 2];
     let amounts = vec![100];
-    let result = SavingsContract::batch_contribute(env.clone(), user.clone(), goal_ids.clone(), amounts.clone());
+    let result = SavingsContract::batch_contribute(
+        env.clone(),
+        user.clone(),
+        goal_ids.clone(),
+        amounts.clone(),
+    );
     assert_eq!(result, Err("goal_amount_mismatch"));
 }
 

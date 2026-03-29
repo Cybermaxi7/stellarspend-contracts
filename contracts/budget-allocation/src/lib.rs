@@ -15,8 +15,11 @@
 mod test;
 mod types;
 
-use crate::types::{BatchBudgetResult, BudgetRecord, BudgetRequest, CategoryBudgetRequest, UserBudgetCategories, DataKey};
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Vec, Symbol, Map};
+use crate::types::{
+    BatchBudgetResult, BudgetRecord, BudgetRequest, CategoryBudgetRequest, DataKey,
+    UserBudgetCategories,
+};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Map, Symbol, Vec};
 
 #[contract]
 pub struct BudgetAllocationContract;
@@ -127,7 +130,8 @@ impl BudgetAllocationContract {
             if category.amount < 0 {
                 panic!("Negative category amount not allowed");
             }
-            calculated_total = calculated_total.checked_add(category.amount)
+            calculated_total = calculated_total
+                .checked_add(category.amount)
                 .expect("Overflow in category total calculation");
         }
 
@@ -153,9 +157,10 @@ impl BudgetAllocationContract {
             last_updated: env.ledger().timestamp(),
         };
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::BudgetCategories(request.user.clone()), &user_categories);
+        env.storage().persistent().set(
+            &DataKey::BudgetCategories(request.user.clone()),
+            &user_categories,
+        );
 
         // Also update the legacy budget record for compatibility
         let budget_record = BudgetRecord {
@@ -186,12 +191,17 @@ impl BudgetAllocationContract {
 
     /// Retrieves budget categories for a specific user.
     pub fn get_budget_categories(env: Env, user: Address) -> Option<UserBudgetCategories> {
-        env.storage().persistent().get(&DataKey::BudgetCategories(user))
+        env.storage()
+            .persistent()
+            .get(&DataKey::BudgetCategories(user))
     }
 
     /// Retrieves the budget for a specific category for a user.
     pub fn get_category_budget(env: Env, user: Address, category: Symbol) -> Option<i128> {
-        let user_categories: Option<UserBudgetCategories> = env.storage().persistent().get(&DataKey::BudgetCategories(user));
+        let user_categories: Option<UserBudgetCategories> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BudgetCategories(user));
         if let Some(categories) = user_categories {
             categories.categories.get(category)
         } else {

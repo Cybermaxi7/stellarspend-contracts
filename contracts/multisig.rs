@@ -53,8 +53,10 @@ pub struct MultisigEvents;
 impl MultisigEvents {
     pub fn pending_created(env: &Env, tx: &PendingTx) {
         let topics = (symbol_short!("tx"), symbol_short!("pending"), tx.id);
-        env.events()
-            .publish(topics, (tx.from.clone(), tx.to.clone(), tx.amount, tx.asset.clone()));
+        env.events().publish(
+            topics,
+            (tx.from.clone(), tx.to.clone(), tx.amount, tx.asset.clone()),
+        );
     }
 
     pub fn approval_recorded(
@@ -120,7 +122,9 @@ pub fn set_signers(env: &Env, caller: Address, signers: Vec<Address>, threshold:
     validate_signer_config(env, &signers, threshold);
 
     env.storage().instance().set(&DataKey::Signers, &signers);
-    env.storage().instance().set(&DataKey::Threshold, &threshold);
+    env.storage()
+        .instance()
+        .set(&DataKey::Threshold, &threshold);
 }
 
 pub fn set_high_value_threshold(env: &Env, caller: Address, amount: i128) {
@@ -143,7 +147,10 @@ pub fn get_signers(env: &Env) -> Vec<Address> {
 }
 
 pub fn get_threshold(env: &Env) -> u32 {
-    env.storage().instance().get(&DataKey::Threshold).unwrap_or(0)
+    env.storage()
+        .instance()
+        .get(&DataKey::Threshold)
+        .unwrap_or(0)
 }
 
 pub fn get_high_value_threshold(env: &Env) -> i128 {
@@ -179,7 +186,11 @@ pub fn is_signer(env: &Env, signer: &Address) -> bool {
 }
 
 pub fn next_tx_id(env: &Env) -> u64 {
-    let current: u64 = env.storage().instance().get(&DataKey::NextTxId).unwrap_or(0);
+    let current: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextTxId)
+        .unwrap_or(0);
     let next = current
         .checked_add(1)
         .unwrap_or_else(|| panic_with_error!(env, MultiSigError::Overflow));

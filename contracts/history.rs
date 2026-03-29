@@ -1,6 +1,6 @@
 use soroban_sdk::{
-    contract, contractimpl, contracterror, contracttype, panic_with_error, symbol_short, 
-    Address, Env, String, Vec, Map, U256,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
+    Env, Map, String, Vec, U256,
 };
 
 #[derive(Clone)]
@@ -120,8 +120,14 @@ pub struct HistoryEvents;
 impl HistoryEvents {
     pub fn transaction_indexed(env: &Env, transaction_id: &U256, user: &Address) {
         let topics = (symbol_short!("history"), symbol_short!("indexed"));
-        env.events()
-            .publish(topics, (transaction_id.clone(), user.clone(), env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (
+                transaction_id.clone(),
+                user.clone(),
+                env.ledger().timestamp(),
+            ),
+        );
     }
 
     pub fn transaction_stored(env: &Env, transaction_id: &U256, from: &Address, to: &Address) {
@@ -132,8 +138,7 @@ impl HistoryEvents {
 
     pub fn page_retrieved(env: &Env, page: u32, page_size: u32, total_count: u32) {
         let topics = (symbol_short!("history"), symbol_short!("page_retrieved"));
-        env.events()
-            .publish(topics, (page, page_size, total_count));
+        env.events().publish(topics, (page, page_size, total_count));
     }
 
     pub fn user_history_retrieved(env: &Env, user: &Address, count: u32) {
@@ -155,8 +160,12 @@ pub fn initialize_history_contract(env: &Env, admin: Address) {
     }
 
     env.storage().instance().set(&DataKey::Admin, &admin);
-    env.storage().instance().set(&DataKey::TransactionCount, &0u32);
-    env.storage().instance().set(&DataKey::TransactionIndex, &Vec::<U256>::new(&env));
+    env.storage()
+        .instance()
+        .set(&DataKey::TransactionCount, &0u32);
+    env.storage()
+        .instance()
+        .set(&DataKey::TransactionIndex, &Vec::<U256>::new(&env));
 }
 
 pub fn get_admin(env: &Env) -> Address {
@@ -199,9 +208,10 @@ pub fn store_transaction(
     };
 
     // Store the transaction record
-    env.storage()
-        .persistent()
-        .set(&DataKey::TransactionRecord(transaction_id.clone()), &transaction);
+    env.storage().persistent().set(
+        &DataKey::TransactionRecord(transaction_id.clone()),
+        &transaction,
+    );
 
     // Update global index
     add_to_global_index(env, &transaction_id);
@@ -222,7 +232,9 @@ pub fn store_transaction(
     let new_count = count
         .checked_add(1)
         .unwrap_or_else(|| panic_with_error!(env, HistoryError::Overflow));
-    env.storage().instance().set(&DataKey::TransactionCount, &new_count);
+    env.storage()
+        .instance()
+        .set(&DataKey::TransactionCount, &new_count);
 
     HistoryEvents::transaction_stored(env, &transaction_id, &from, &to);
     HistoryEvents::transaction_indexed(env, &transaction_id, &from);
@@ -420,12 +432,7 @@ pub fn get_user_transaction_summary(env: &Env, user: Address) -> UserTransaction
     }
 }
 
-pub fn search_transactions(
-    env: &Env,
-    query: String,
-    page: u32,
-    page_size: u32,
-) -> PaginatedResult {
+pub fn search_transactions(env: &Env, query: String, page: u32, page_size: u32) -> PaginatedResult {
     if page_size == 0 || page_size > 100 {
         panic_with_error!(env, HistoryError::InvalidPageSize);
     }
@@ -478,7 +485,9 @@ pub fn rebuild_index(env: &Env, caller: Address) {
     require_admin(env, &caller);
 
     // Clear existing indices
-    env.storage().instance().set(&DataKey::TransactionIndex, &Vec::<U256>::new(&env));
+    env.storage()
+        .instance()
+        .set(&DataKey::TransactionIndex, &Vec::<U256>::new(&env));
 
     // Rebuild from stored transactions
     let mut new_index = Vec::<U256>::new(&env);
@@ -488,8 +497,12 @@ pub fn rebuild_index(env: &Env, caller: Address) {
     // through all stored transactions. For now, we'll assume we can access them
     // through some mechanism.
 
-    env.storage().instance().set(&DataKey::TransactionIndex, &new_index);
-    env.storage().instance().set(&DataKey::TransactionCount, &count);
+    env.storage()
+        .instance()
+        .set(&DataKey::TransactionIndex, &new_index);
+    env.storage()
+        .instance()
+        .set(&DataKey::TransactionCount, &count);
 
     HistoryEvents::index_rebuilt(env, count);
 }
@@ -500,11 +513,11 @@ fn generate_transaction_id(env: &Env) -> U256 {
     let timestamp = env.ledger().timestamp();
     let sequence = env.ledger().sequence();
     let mut bytes = [0u8; 32];
-    
+
     // Simple ID generation based on timestamp and sequence
     bytes[0..8].copy_from_slice(&timestamp.to_be_bytes());
     bytes[8..16].copy_from_slice(&sequence.to_be_bytes());
-    
+
     U256::from_be_bytes(bytes)
 }
 
@@ -525,7 +538,9 @@ fn get_global_transaction_index(env: &Env) -> Vec<U256> {
 fn add_to_global_index(env: &Env, transaction_id: &U256) {
     let mut index = get_global_transaction_index(env);
     index.push_back(transaction_id.clone());
-    env.storage().instance().set(&DataKey::TransactionIndex, &index);
+    env.storage()
+        .instance()
+        .set(&DataKey::TransactionIndex, &index);
 }
 
 fn get_user_transaction_ids(env: &Env, user: &Address) -> Vec<U256> {

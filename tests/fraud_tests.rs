@@ -42,8 +42,8 @@ fn test_daily_limit_detection() {
     }
     assert!(flagged);
     let events = env.events().all();
-    let found = events.iter().any(|e| {
-        e.topics.0 == "fraud_alert" && e.data.1.contains(&"daily_limit")
-    });
+    let found = events
+        .iter()
+        .any(|e| e.topics.0 == "fraud_alert" && e.data.1.contains(&"daily_limit"));
     assert!(found);
 }

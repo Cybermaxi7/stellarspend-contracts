@@ -77,22 +77,12 @@ impl WalletEvents {
         env.events().publish(topics, (owner.clone(), wallet_id));
     }
 
-    pub fn wallet_creation_failure(
-        env: &Env,
-        batch_id: u64,
-        owner: &Address,
-        error_code: u32,
-    ) {
+    pub fn wallet_creation_failure(env: &Env, batch_id: u64, owner: &Address, error_code: u32) {
         let topics = (symbol_short!("wallet"), symbol_short!("failure"), batch_id);
         env.events().publish(topics, (owner.clone(), error_code));
     }
 
-    pub fn batch_completed(
-        env: &Env,
-        batch_id: u64,
-        successful: u32,
-        failed: u32,
-    ) {
+    pub fn batch_completed(env: &Env, batch_id: u64, successful: u32, failed: u32) {
         let topics = (symbol_short!("batch"), symbol_short!("completed"), batch_id);
         env.events().publish(topics, (successful, failed));
     }
@@ -109,7 +99,11 @@ impl WalletEvents {
         new_owner: &Address,
         wallet_id: u64,
     ) {
-        let topics = (symbol_short!("recovery"), symbol_short!("success"), batch_id);
+        let topics = (
+            symbol_short!("recovery"),
+            symbol_short!("success"),
+            batch_id,
+        );
         env.events()
             .publish(topics, (old_owner.clone(), new_owner.clone(), wallet_id));
     }
@@ -121,20 +115,21 @@ impl WalletEvents {
         new_owner: &Address,
         error_code: u32,
     ) {
-        let topics = (symbol_short!("recovery"), symbol_short!("failure"), batch_id);
-        env.events().publish(
-            topics,
-            (old_owner.clone(), new_owner.clone(), error_code),
+        let topics = (
+            symbol_short!("recovery"),
+            symbol_short!("failure"),
+            batch_id,
         );
+        env.events()
+            .publish(topics, (old_owner.clone(), new_owner.clone(), error_code));
     }
 
-    pub fn recovery_completed(
-        env: &Env,
-        batch_id: u64,
-        successful: u32,
-        failed: u32,
-    ) {
-        let topics = (symbol_short!("recovery"), symbol_short!("completed"), batch_id);
+    pub fn recovery_completed(env: &Env, batch_id: u64, successful: u32, failed: u32) {
+        let topics = (
+            symbol_short!("recovery"),
+            symbol_short!("completed"),
+            batch_id,
+        );
         env.events().publish(topics, (successful, failed));
     }
 }

@@ -8,7 +8,8 @@ use soroban_sdk::{
 mod token;
 
 use token::{
-    TokenContract, TokenContractClient, TokenError, TokenConfig, TokenMetrics, MintRecord, BurnRecord,
+    BurnRecord, MintRecord, TokenConfig, TokenContract, TokenContractClient, TokenError,
+    TokenMetrics,
 };
 
 fn setup_token_contract() -> (Env, Address, TokenContractClient<'static>) {
@@ -107,7 +108,8 @@ fn test_admin_mint_success() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("mint") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("mint")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -175,11 +177,11 @@ fn test_mint_cap_respected() {
     let (env, admin, client) = setup_token_contract();
 
     let recipient = Address::generate(&env);
-    
+
     // Mint up to cap
     client.mint(&admin, &recipient, &500000i128);
     client.mint(&admin, &recipient, &500000i128);
-    
+
     assert_eq!(client.total_supply(), 1000000i128);
     assert_eq!(client.total_minted(), 1000000i128);
 
@@ -215,7 +217,8 @@ fn test_burn_success() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("burn") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("burn")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -310,7 +313,8 @@ fn test_transfer_success() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("transfer") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("transfer")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -379,7 +383,8 @@ fn test_approve_success() {
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("approval") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("approval")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
@@ -536,10 +541,10 @@ fn test_unauthorized_unpause_fails() {
     let (env, admin, client) = setup_token_contract();
 
     let unauthorized = Address::generate(&env);
-    
+
     // First pause with admin
     client.pause(&admin);
-    
+
     // Try to unpause with unauthorized
     client.unpause(&unauthorized);
 }
@@ -590,7 +595,7 @@ fn test_overflow_protection_mint() {
     let (env, admin, client) = setup_token_contract_no_caps();
 
     let recipient = Address::generate(&env);
-    
+
     // Mint a large amount
     client.mint(&admin, &recipient, &i128::MAX);
 
@@ -761,48 +766,53 @@ fn test_event_emission_comprehensive() {
 
     // Check all events were emitted
     let events = env.events().all();
-    
+
     let minter_added_events = events
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("added") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("added")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
-    
+
     let mint_events = events
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("mint") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("mint")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
-    
+
     let transfer_events = events
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("transfer") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("transfer")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
-    
+
     let approval_events = events
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("approval") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("approval")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();
-    
+
     let burn_events = events
         .iter()
         .filter(|event| {
             event.1.iter().any(|topic| {
-                symbol_short!("burn") == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
+                symbol_short!("burn")
+                    == soroban_sdk::Symbol::try_from_val(&env, &topic).unwrap_or(symbol_short!(""))
             })
         })
         .count();

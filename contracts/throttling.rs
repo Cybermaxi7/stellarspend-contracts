@@ -1,6 +1,6 @@
 use soroban_sdk::{
-    contract, contractimpl, contracterror, contracttype, panic_with_error, symbol_short, 
-    Address, Env, Map, Vec, U256,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
+    Env, Map, Vec, U256,
 };
 
 #[derive(Clone)]
@@ -129,8 +129,10 @@ impl ThrottleEvents {
 
     pub fn transaction_allowed(env: &Env, wallet: &Address, remaining: u32) {
         let topics = (symbol_short!("throttle"), symbol_short!("allowed"));
-        env.events()
-            .publish(topics, (wallet.clone(), remaining, env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (wallet.clone(), remaining, env.ledger().timestamp()),
+        );
     }
 
     pub fn config_updated(env: &Env, admin: &Address, config: &ThrottleConfig) {
@@ -149,20 +151,26 @@ impl ThrottleEvents {
 
     pub fn wallet_exempted(env: &Env, admin: &Address, wallet: &Address) {
         let topics = (symbol_short!("throttle"), symbol_short!("exempted"));
-        env.events()
-            .publish(topics, (admin.clone(), wallet.clone(), env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (admin.clone(), wallet.clone(), env.ledger().timestamp()),
+        );
     }
 
     pub fn cleanup_performed(env: &Env, cleaned_wallets: u32, freed_space: u64) {
         let topics = (symbol_short!("throttle"), symbol_short!("cleanup"));
-        env.events()
-            .publish(topics, (cleaned_wallets, freed_space, env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (cleaned_wallets, freed_space, env.ledger().timestamp()),
+        );
     }
 
     pub fn violation_recorded(env: &Env, wallet: &Address, violation_count: u32) {
         let topics = (symbol_short!("throttle"), symbol_short!("violation"));
-        env.events()
-            .publish(topics, (wallet.clone(), violation_count, env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (wallet.clone(), violation_count, env.ledger().timestamp()),
+        );
     }
 }
 
@@ -175,8 +183,12 @@ pub fn initialize_throttle_contract(env: &Env, admin: Address, config: ThrottleC
     validate_config(&env, &config);
 
     env.storage().instance().set(&DataKey::Admin, &admin);
-    env.storage().instance().set(&DataKey::ThrottleConfig, &config);
-    env.storage().instance().set(&DataKey::ThrottledWallets, &Vec::<Address>::new(&env));
+    env.storage()
+        .instance()
+        .set(&DataKey::ThrottleConfig, &config);
+    env.storage()
+        .instance()
+        .set(&DataKey::ThrottledWallets, &Vec::<Address>::new(&env));
 
     let initial_stats = GlobalThrottleStats {
         total_transactions_checked: 0,
@@ -185,7 +197,9 @@ pub fn initialize_throttle_contract(env: &Env, admin: Address, config: ThrottleC
         last_cleanup_time: env.ledger().timestamp(),
         average_transactions_per_window: 0.0,
     };
-    env.storage().instance().set(&DataKey::GlobalThrottleStats, &initial_stats);
+    env.storage()
+        .instance()
+        .set(&DataKey::GlobalThrottleStats, &initial_stats);
 }
 
 pub fn get_admin(env: &Env) -> Address {
@@ -205,7 +219,7 @@ pub fn require_admin(env: &Env, caller: &Address) {
 
 pub fn check_transaction_throttle(env: &Env, wallet_address: Address) -> ThrottleResult {
     let config = get_throttle_config(env);
-    
+
     // Check if throttling is enabled
     if !config.enabled {
         return ThrottleResult {
@@ -229,7 +243,7 @@ pub fn check_transaction_throttle(env: &Env, wallet_address: Address) -> Throttl
     }
 
     let current_time = env.ledger().timestamp();
-    
+
     // Perform cleanup if needed
     maybe_cleanup_old_data(env, current_time);
 
@@ -244,7 +258,9 @@ pub fn check_transaction_throttle(env: &Env, wallet_address: Address) -> Throttl
                 reason: ThrottleReason::CurrentlyThrottled,
                 remaining_transactions: 0,
                 window_reset_time: wallet_state.window_start + config.window_size_seconds,
-                throttle_end_time: Some(wallet_state.throttle_start_time + config.block_duration_seconds),
+                throttle_end_time: Some(
+                    wallet_state.throttle_start_time + config.block_duration_seconds,
+                ),
             };
         } else {
             // Throttle period expired, reset state
@@ -252,10 +268,10 @@ pub fn check_transaction_throttle(env: &Env, wallet_address: Address) -> Throttl
             wallet_state.transaction_count = 0;
             wallet_state.window_start = current_time;
             wallet_state.violation_count = 0;
-            
+
             // Remove from throttled wallets list
             remove_from_throttled_wallets(env, &wallet_address);
-            
+
             ThrottleEvents::throttle_lifted(env, &wallet_address, config.block_duration_seconds);
         }
     }
@@ -271,7 +287,10 @@ pub fn check_transaction_throttle(env: &Env, wallet_address: Address) -> Throttl
         // Trigger throttling
         wallet_state.is_throttled = true;
         wallet_state.throttle_start_time = current_time;
-        wallet_state.violation_count += 1;
+        wallet_state.violation_count = wallet_state
+            .violation_count
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(env, ThrottleError::Overflow));
 
         let violation = ThrottleViolation {
             wallet_address: wallet_address.clone(),
@@ -303,10 +322,16 @@ pub fn check_transaction_throttle(env: &Env, wallet_address: Address) -> Throttl
         };
     }
 
-    // Transaction is allowed
-    wallet_state.transaction_count += 1;
+    // Transaction is allowed - use checked arithmetic
+    wallet_state.transaction_count = wallet_state
+        .transaction_count
+        .checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(env, ThrottleError::Overflow));
     wallet_state.last_transaction_time = current_time;
-    wallet_state.total_transactions_all_time += 1;
+    wallet_state.total_transactions_all_time = wallet_state
+        .total_transactions_all_time
+        .checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(env, ThrottleError::Overflow));
 
     let remaining = config.max_transactions_per_window - wallet_state.transaction_count;
 
@@ -331,29 +356,33 @@ pub fn check_transaction_throttle(env: &Env, wallet_address: Address) -> Throttl
 pub fn update_throttle_config(env: &Env, caller: Address, new_config: ThrottleConfig) {
     require_admin(env, &caller);
     validate_config(&env, &new_config);
-    
-    env.storage().instance().set(&DataKey::ThrottleConfig, &new_config);
+
+    env.storage()
+        .instance()
+        .set(&DataKey::ThrottleConfig, &new_config);
     ThrottleEvents::config_updated(env, &caller, &new_config);
 }
 
 pub fn add_exempt_address(env: &Env, caller: Address, wallet_address: Address) {
     require_admin(env, &caller);
-    
+
     let mut config = get_throttle_config(env);
     if !config.exempt_addresses.contains(&wallet_address) {
         config.exempt_addresses.push_back(wallet_address.clone());
-        env.storage().instance().set(&DataKey::ThrottleConfig, &config);
+        env.storage()
+            .instance()
+            .set(&DataKey::ThrottleConfig, &config);
         ThrottleEvents::wallet_exempted(env, &caller, &wallet_address);
     }
 }
 
 pub fn remove_exempt_address(env: &Env, caller: Address, wallet_address: Address) {
     require_admin(env, &caller);
-    
+
     let mut config = get_throttle_config(env);
     let mut found = false;
     let mut new_exempt_list = Vec::<Address>::new(&env);
-    
+
     for addr in config.exempt_addresses.iter() {
         if addr != wallet_address {
             new_exempt_list.push_back(addr);
@@ -361,10 +390,12 @@ pub fn remove_exempt_address(env: &Env, caller: Address, wallet_address: Address
             found = true;
         }
     }
-    
+
     if found {
         config.exempt_addresses = new_exempt_list;
-        env.storage().instance().set(&DataKey::ThrottleConfig, &config);
+        env.storage()
+            .instance()
+            .set(&DataKey::ThrottleConfig, &config);
     }
 }
 
@@ -400,10 +431,10 @@ pub fn force_cleanup(env: &Env, caller: Address) {
 
 pub fn reset_wallet_throttle_state(env: &Env, caller: Address, wallet_address: Address) {
     require_admin(env, &caller);
-    
+
     let config = get_throttle_config(env);
     let current_time = env.ledger().timestamp();
-    
+
     let reset_state = WalletThrottleState {
         wallet_address: wallet_address.clone(),
         transaction_count: 0,
@@ -414,7 +445,7 @@ pub fn reset_wallet_throttle_state(env: &Env, caller: Address, wallet_address: A
         violation_count: 0,
         total_transactions_all_time: 0,
     };
-    
+
     save_wallet_throttle_state(env, &wallet_address, &reset_state);
     remove_from_throttled_wallets(env, &wallet_address);
 }
@@ -469,47 +500,53 @@ fn add_to_throttled_wallets(env: &Env, wallet_address: &Address) {
     let mut throttled_wallets = get_throttled_wallets(env);
     if !throttled_wallets.contains(wallet_address) {
         throttled_wallets.push_back(wallet_address.clone());
-        env.storage().instance().set(&DataKey::ThrottledWallets, &throttled_wallets);
+        env.storage()
+            .instance()
+            .set(&DataKey::ThrottledWallets, &throttled_wallets);
     }
 }
 
 fn remove_from_throttled_wallets(env: &Env, wallet_address: &Address) {
     let throttled_wallets = get_throttled_wallets(env);
     let mut new_list = Vec::<Address>::new(&env);
-    
+
     for addr in throttled_wallets.iter() {
         if addr != wallet_address {
             new_list.push_back(addr);
         }
     }
-    
-    env.storage().instance().set(&DataKey::ThrottledWallets, &new_list);
+
+    env.storage()
+        .instance()
+        .set(&DataKey::ThrottledWallets, &new_list);
 }
 
 fn update_global_stats(env: &Env, is_violation: bool) {
     let mut stats = get_global_throttle_stats(env);
     stats.total_transactions_checked += 1;
-    
+
     if is_violation {
         stats.total_violations += 1;
     }
-    
+
     let throttled_wallets = get_throttled_wallets(env);
     stats.currently_throttled_wallets = throttled_wallets.len() as u32;
-    
+
     // Update average (simplified calculation)
     if stats.total_transactions_checked > 0 {
-        stats.average_transactions_per_window = 
+        stats.average_transactions_per_window =
             (stats.total_violations as f64) / (stats.total_transactions_checked as f64);
     }
-    
-    env.storage().instance().set(&DataKey::GlobalThrottleStats, &stats);
+
+    env.storage()
+        .instance()
+        .set(&DataKey::GlobalThrottleStats, &stats);
 }
 
 fn maybe_cleanup_old_data(env: &Env, current_time: u64) {
     let config = get_throttle_config(env);
     let stats = get_global_throttle_stats(env);
-    
+
     if current_time >= stats.last_cleanup_time + config.cleanup_interval_seconds {
         cleanup_old_data(env, current_time);
     }
@@ -518,14 +555,16 @@ fn maybe_cleanup_old_data(env: &Env, current_time: u64) {
 fn cleanup_old_data(env: &Env, current_time: u64) {
     let config = get_throttle_config(env);
     let mut cleaned_wallets = 0u32;
-    
+
     // This is a simplified cleanup - in production, you'd need a way to iterate
     // through all wallet states and clean up expired ones
-    
+
     let mut stats = get_global_throttle_stats(env);
     stats.last_cleanup_time = current_time;
-    env.storage().instance().set(&DataKey::GlobalThrottleStats, &stats);
-    
+    env.storage()
+        .instance()
+        .set(&DataKey::GlobalThrottleStats, &stats);
+
     ThrottleEvents::cleanup_performed(env, cleaned_wallets, 0);
 }
 
@@ -558,7 +597,10 @@ impl ThrottleContract {
         remove_exempt_address(&env, caller, wallet_address);
     }
 
-    pub fn get_wallet_throttle_info(env: Env, wallet_address: Address) -> Option<WalletThrottleState> {
+    pub fn get_wallet_throttle_info(
+        env: Env,
+        wallet_address: Address,
+    ) -> Option<WalletThrottleState> {
         get_wallet_throttle_info(&env, wallet_address)
     }
 

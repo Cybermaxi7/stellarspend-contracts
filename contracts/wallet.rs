@@ -1,5 +1,6 @@
 use soroban_sdk::{
-    contract, contractimpl, contracterror, contracttype, panic_with_error, symbol_short, Address, Env, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
+    Env, Symbol, Vec,
 };
 
 #[derive(Clone)]
@@ -59,17 +60,26 @@ pub struct WalletEvents;
 impl WalletEvents {
     pub fn wallet_linked(env: &Env, wallet: &Address, owner: &Address) {
         let topics = (symbol_short!("wallet"), symbol_short!("linked"));
-        env.events()
-            .publish(topics, (wallet.clone(), owner.clone(), env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (wallet.clone(), owner.clone(), env.ledger().timestamp()),
+        );
     }
 
     pub fn wallet_unlinked(env: &Env, wallet: &Address, owner: &Address) {
         let topics = (symbol_short!("wallet"), symbol_short!("unlinked"));
-        env.events()
-            .publish(topics, (wallet.clone(), owner.clone(), env.ledger().timestamp()));
+        env.events().publish(
+            topics,
+            (wallet.clone(), owner.clone(), env.ledger().timestamp()),
+        );
     }
 
-    pub fn verification_started(env: &Env, challenge_id: u64, wallet: &Address, challenger: &Address) {
+    pub fn verification_started(
+        env: &Env,
+        challenge_id: u64,
+        wallet: &Address,
+        challenger: &Address,
+    ) {
         let topics = (symbol_short!("verification"), symbol_short!("started"));
         env.events().publish(
             topics,
@@ -142,9 +152,24 @@ pub fn require_admin(env: &Env, caller: &Address) {
 
 pub fn link_wallet(env: &Env, caller: Address, wallet_address: Address, owner_address: Address) {
     caller.require_auth();
-    
+
+    // Validate that wallet_address and owner_address are different
+    if wallet_address == owner_address {
+        panic_with_error!(env, WalletError::InvalidSignature);
+    }
+
+    // Validate caller is either admin or the owner
+    let admin = get_admin(env);
+    if caller != admin && caller != owner_address {
+        panic_with_error!(env, WalletError::Unauthorized);
+    }
+
     // Check if wallet is already linked
-    if env.storage().instance().has(&DataKey::LinkedWallet(wallet_address.clone())) {
+    if env
+        .storage()
+        .instance()
+        .has(&DataKey::LinkedWallet(wallet_address.clone()))
+    {
         panic_with_error!(env, WalletError::WalletAlreadyLinked);
     }
 
@@ -161,16 +186,17 @@ pub fn link_wallet(env: &Env, caller: Address, wallet_address: Address, owner_ad
     env.storage()
         .instance()
         .set(&DataKey::LinkedWallet(wallet_address.clone()), &wallet_info);
-    env.storage()
-        .instance()
-        .set(&DataKey::WalletOwner(owner_address.clone()), &wallet_address);
+    env.storage().instance().set(
+        &DataKey::WalletOwner(owner_address.clone()),
+        &wallet_address,
+    );
 
     WalletEvents::wallet_linked(env, &wallet_address, &owner_address);
 }
 
 pub fn unlink_wallet(env: &Env, caller: Address, wallet_address: Address) {
     caller.require_auth();
-    
+
     let wallet_info: LinkedWalletInfo = env
         .storage()
         .instance()
@@ -219,7 +245,9 @@ pub fn verify_wallet_ownership(
     }
 
     // Generate and verify nonce
-    let current_nonce = wallet_info.verification_nonce.checked_add(1)
+    let current_nonce = wallet_info
+        .verification_nonce
+        .checked_add(1)
         .unwrap_or_else(|| panic_with_error!(env, WalletError::InvalidNonce));
 
     // Update nonce
@@ -230,9 +258,10 @@ pub fn verify_wallet_ownership(
         ..wallet_info
     };
 
-    env.storage()
-        .instance()
-        .set(&DataKey::LinkedWallet(wallet_address.clone()), &updated_wallet_info);
+    env.storage().instance().set(
+        &DataKey::LinkedWallet(wallet_address.clone()),
+        &updated_wallet_info,
+    );
     env.storage()
         .instance()
         .set(&DataKey::VerificationStatus(wallet_address.clone()), &true);
@@ -271,9 +300,10 @@ pub fn create_verification_challenge(
         is_completed: false,
     };
 
-    env.storage()
-        .instance()
-        .set(&DataKey::VerificationChallenge(wallet_address.clone(), challenge_id), &challenge);
+    env.storage().instance().set(
+        &DataKey::VerificationChallenge(wallet_address.clone(), challenge_id),
+        &challenge,
+    );
 
     WalletEvents::verification_started(env, challenge_id, &wallet_address, &challenger);
 
@@ -290,7 +320,10 @@ pub fn complete_verification_challenge(
     let mut challenge: VerificationChallenge = env
         .storage()
         .instance()
-        .get(&DataKey::VerificationChallenge(wallet_address.clone(), challenge_id))
+        .get(&DataKey::VerificationChallenge(
+            wallet_address.clone(),
+            challenge_id,
+        ))
         .unwrap_or_else(|| panic_with_error!(env, WalletError::ChallengeNotFound));
 
     // Check if challenge is expired
@@ -319,9 +352,10 @@ pub fn complete_verification_challenge(
 
     // Mark challenge as completed
     challenge.is_completed = true;
-    env.storage()
-        .instance()
-        .set(&DataKey::VerificationChallenge(wallet_address.clone(), challenge_id), &challenge);
+    env.storage().instance().set(
+        &DataKey::VerificationChallenge(wallet_address.clone(), challenge_id),
+        &challenge,
+    );
 
     // Update wallet verification status
     let updated_wallet_info = LinkedWalletInfo {
@@ -330,9 +364,10 @@ pub fn complete_verification_challenge(
         ..wallet_info
     };
 
-    env.storage()
-        .instance()
-        .set(&DataKey::LinkedWallet(wallet_address.clone()), &updated_wallet_info);
+    env.storage().instance().set(
+        &DataKey::LinkedWallet(wallet_address.clone()),
+        &updated_wallet_info,
+    );
     env.storage()
         .instance()
         .set(&DataKey::VerificationStatus(wallet_address.clone()), &true);
@@ -382,11 +417,15 @@ pub fn get_wallet_owner(env: &Env, wallet_address: Address) -> Option<Address> {
         .storage()
         .instance()
         .get(&DataKey::LinkedWallet(wallet_address));
-    
+
     wallet_info.map(|info| info.owner_address)
 }
 
-pub fn validate_wallet_action(env: &Env, wallet_address: Address, signer: &Address) -> Result<(), WalletError> {
+pub fn validate_wallet_action(
+    env: &Env,
+    wallet_address: Address,
+    signer: &Address,
+) -> Result<(), WalletError> {
     // Check if wallet is linked
     let wallet_info: LinkedWalletInfo = env
         .storage()
@@ -429,15 +468,29 @@ impl WalletContract {
         unlink_wallet(&env, caller, wallet_address);
     }
 
-    pub fn verify_wallet_ownership(env: Env, wallet_address: Address, signer_address: Address, signature: Vec<u8>) -> bool {
+    pub fn verify_wallet_ownership(
+        env: Env,
+        wallet_address: Address,
+        signer_address: Address,
+        signature: Vec<u8>,
+    ) -> bool {
         verify_wallet_ownership(&env, wallet_address, signer_address, signature)
     }
 
-    pub fn create_verification_challenge(env: Env, challenger: Address, wallet_address: Address) -> u64 {
+    pub fn create_verification_challenge(
+        env: Env,
+        challenger: Address,
+        wallet_address: Address,
+    ) -> u64 {
         create_verification_challenge(&env, challenger, wallet_address)
     }
 
-    pub fn complete_verification_challenge(env: Env, wallet_address: Address, challenge_id: u64, signature: Vec<u8>) -> bool {
+    pub fn complete_verification_challenge(
+        env: Env,
+        wallet_address: Address,
+        challenge_id: u64,
+        signature: Vec<u8>,
+    ) -> bool {
         complete_verification_challenge(&env, wallet_address, challenge_id, signature)
     }
 
@@ -459,7 +512,7 @@ impl WalletContract {
 
     pub fn validate_wallet_action(env: Env, wallet_address: Address, signer: Address) {
         match validate_wallet_action(&env, wallet_address, &signer) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => panic_with_error!(&env, e),
         }
     }

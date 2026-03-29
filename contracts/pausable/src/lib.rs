@@ -1,5 +1,5 @@
 //! # Pausable Contract
-//! 
+//!
 //! Emergency pause functionality for StellarSpend contracts.
 //! Allows admin to pause/unpause critical operations during emergencies.
 
@@ -53,14 +53,13 @@ impl PausableContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
 
-        env.events()
-            .publish(("pausable", "initialized"), admin);
+        env.events().publish(("pausable", "initialized"), admin);
     }
 
     /// Pause the contract (admin only)
     pub fn pause(env: Env, caller: Address) {
         caller.require_auth();
-        Self::require_admin(&env, &caller);
+        Self::require_admin(&env, caller.clone());
 
         let is_paused: bool = env
             .storage()
@@ -74,14 +73,13 @@ impl PausableContract {
 
         env.storage().instance().set(&DataKey::Paused, &true);
 
-        env.events()
-            .publish(("pausable", "paused"), caller);
+        env.events().publish(("pausable", "paused"), caller);
     }
 
     /// Unpause the contract (admin only)
     pub fn unpause(env: Env, caller: Address) {
         caller.require_auth();
-        Self::require_admin(&env, &caller);
+        Self::require_admin(&env, caller.clone());
 
         let is_paused: bool = env
             .storage()
@@ -95,8 +93,7 @@ impl PausableContract {
 
         env.storage().instance().set(&DataKey::Paused, &false);
 
-        env.events()
-            .publish(("pausable", "unpaused"), caller);
+        env.events().publish(("pausable", "unpaused"), caller);
     }
 
     /// Check if the contract is paused
@@ -118,23 +115,23 @@ impl PausableContract {
     /// Update the admin address (current admin only)
     pub fn set_admin(env: Env, current_admin: Address, new_admin: Address) {
         current_admin.require_auth();
-        Self::require_admin(&env, &current_admin);
+        Self::require_admin(&env, current_admin.clone());
 
         env.storage().instance().set(&DataKey::Admin, &new_admin);
 
+        // Use a short symbol for the event (max 9 chars)
         env.events()
-            .publish(("pausable", "admin_changed"), (current_admin, new_admin));
+            .publish(("pausable", "adminchgd"), (current_admin, new_admin));
     }
 
     /// Require that the caller is the admin
-    pub fn require_admin(env: &Env, caller: &Address) {
+    pub fn require_admin(env: &Env, caller: Address) {
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Contract not initialized");
-
-        if *caller != admin {
+        if caller != admin {
             panic_with_error!(env, PausableError::Unauthorized);
         }
     }

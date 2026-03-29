@@ -51,7 +51,7 @@ pub fn is_valid_limit(limit: i128) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, symbol_short, Env};
+    use soroban_sdk::{symbol_short, testutils::Address as _, Env};
 
     fn create_valid_request(env: &Env) -> SpendingLimitRequest {
         SpendingLimitRequest {

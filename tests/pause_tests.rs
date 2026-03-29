@@ -50,7 +50,11 @@ mod pausable_mock {
             caller.require_auth();
             Self::require_admin(&env, &caller);
 
-            let is_paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+            let is_paused: bool = env
+                .storage()
+                .instance()
+                .get(&DataKey::Paused)
+                .unwrap_or(false);
             if is_paused {
                 panic_with_error!(&env, PausableError::ContractPaused);
             }
@@ -63,7 +67,11 @@ mod pausable_mock {
             caller.require_auth();
             Self::require_admin(&env, &caller);
 
-            let is_paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+            let is_paused: bool = env
+                .storage()
+                .instance()
+                .get(&DataKey::Paused)
+                .unwrap_or(false);
             if !is_paused {
                 panic_with_error!(&env, PausableError::ContractNotPaused);
             }
@@ -73,7 +81,10 @@ mod pausable_mock {
         }
 
         pub fn is_paused(env: Env) -> bool {
-            env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
+            env.storage()
+                .instance()
+                .get(&DataKey::Paused)
+                .unwrap_or(false)
         }
 
         pub fn get_admin(env: Env) -> Address {
@@ -109,7 +120,11 @@ mod pausable_mock {
         }
 
         fn require_not_paused(env: &Env) {
-            let is_paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+            let is_paused: bool = env
+                .storage()
+                .instance()
+                .get(&DataKey::Paused)
+                .unwrap_or(false);
             if is_paused {
                 panic_with_error!(env, PausableError::ContractPaused);
             }

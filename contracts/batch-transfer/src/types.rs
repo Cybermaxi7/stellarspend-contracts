@@ -117,10 +117,8 @@ impl TransferEvents {
         error_code: u32,
     ) {
         let topics = (symbol_short!("burn"), symbol_short!("failure"), batch_id);
-        env.events().publish(
-            topics,
-            (owner.clone(), requested_amount, error_code),
-        );
+        env.events()
+            .publish(topics, (owner.clone(), requested_amount, error_code));
     }
 
     pub fn burn_batch_completed(

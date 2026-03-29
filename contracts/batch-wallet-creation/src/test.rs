@@ -366,10 +366,7 @@ fn test_batch_recover_wallets_partial_failures() {
 
     let mut create_requests: Vec<WalletCreateRequest> = Vec::new(&env);
     create_requests.push_back(create_wallet_request(&env, existing_owner.clone()));
-    create_requests.push_back(create_wallet_request(
-        &env,
-        other_existing_owner.clone(),
-    ));
+    create_requests.push_back(create_wallet_request(&env, other_existing_owner.clone()));
     client.batch_create_wallets(&admin, &create_requests);
 
     let mut recovery_requests: Vec<WalletRecoveryRequest> = Vec::new(&env);
@@ -470,11 +467,7 @@ fn test_batch_recover_wallets_unauthorized() {
     let new_owner = Address::generate(&env);
 
     let mut recovery_requests: Vec<WalletRecoveryRequest> = Vec::new(&env);
-    recovery_requests.push_back(create_recovery_request(
-        &env,
-        original_owner,
-        new_owner,
-    ));
+    recovery_requests.push_back(create_recovery_request(&env, original_owner, new_owner));
 
     let unauthorized = Address::generate(&env);
     client.batch_recover_wallets(&unauthorized, &recovery_requests);

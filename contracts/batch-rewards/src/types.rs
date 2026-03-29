@@ -44,21 +44,20 @@ impl RewardEvents {
     }
 
     pub fn reward_success(env: &Env, batch_id: u64, recipient: &Address, amount: i128) {
-        let topics = (
-            symbol_short!("reward"),
-            symbol_short!("success"),
-            batch_id,
-        );
+        let topics = (symbol_short!("reward"), symbol_short!("success"), batch_id);
         env.events().publish(topics, (recipient, amount));
     }
 
-    pub fn reward_failure(env: &Env, batch_id: u64, recipient: &Address, amount: i128, error_code: u32) {
-        let topics = (
-            symbol_short!("reward"),
-            symbol_short!("failure"),
-            batch_id,
-        );
-        env.events().publish(topics, (recipient, amount, error_code));
+    pub fn reward_failure(
+        env: &Env,
+        batch_id: u64,
+        recipient: &Address,
+        amount: i128,
+        error_code: u32,
+    ) {
+        let topics = (symbol_short!("reward"), symbol_short!("failure"), batch_id);
+        env.events()
+            .publish(topics, (recipient, amount, error_code));
     }
 
     pub fn batch_completed(

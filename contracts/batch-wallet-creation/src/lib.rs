@@ -4,9 +4,7 @@
 mod types;
 mod validation;
 
-use soroban_sdk::{
-    contract, contractimpl, panic_with_error, Address, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
 
 pub use crate::types::{
     BatchCreateResult, BatchRecoveryResult, DataKey, Wallet, WalletCreateRequest,
@@ -49,7 +47,9 @@ impl BatchWalletContract {
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::TotalBatches, &0u64);
-        env.storage().instance().set(&DataKey::TotalWalletsCreated, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalWalletsCreated, &0u64);
     }
 
     /// Executes batch creation of wallets for multiple owners.
@@ -92,7 +92,8 @@ impl BatchWalletContract {
             .storage()
             .instance()
             .get(&DataKey::TotalWalletsCreated)
-            .unwrap_or(0) + 1;
+            .unwrap_or(0)
+            + 1;
 
         // Process each request
         for request in requests.iter() {
@@ -117,12 +118,7 @@ impl BatchWalletContract {
                     error_code,
                 ));
                 failed_count += 1;
-                WalletEvents::wallet_creation_failure(
-                    &env,
-                    batch_id,
-                    &request.owner,
-                    error_code,
-                );
+                WalletEvents::wallet_creation_failure(&env, batch_id, &request.owner, error_code);
                 continue;
             }
 
@@ -134,7 +130,9 @@ impl BatchWalletContract {
             };
 
             // Store wallet
-            env.storage().persistent().set(&DataKey::Wallets(request.owner.clone()), &wallet);
+            env.storage()
+                .persistent()
+                .set(&DataKey::Wallets(request.owner.clone()), &wallet);
 
             // Increment ID
             next_wallet_id += 1;
@@ -143,12 +141,7 @@ impl BatchWalletContract {
             results.push_back(WalletCreateResult::Success(request.owner.clone()));
             successful_count += 1;
 
-            WalletEvents::wallet_created(
-                &env,
-                batch_id,
-                &request.owner,
-                wallet.id,
-            );
+            WalletEvents::wallet_created(&env, batch_id, &request.owner, wallet.id);
         }
 
         // Update storage
@@ -166,17 +159,13 @@ impl BatchWalletContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalBatches, &(total_batches + 1));
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalWalletsCreated, &(total_created + successful_count as u64));
+        env.storage().instance().set(
+            &DataKey::TotalWalletsCreated,
+            &(total_created + successful_count as u64),
+        );
 
         // Emit batch completed event
-        WalletEvents::batch_completed(
-            &env,
-            batch_id,
-            successful_count,
-            failed_count,
-        );
+        WalletEvents::batch_completed(&env, batch_id, successful_count, failed_count);
 
         BatchCreateResult {
             total_requests: request_count,

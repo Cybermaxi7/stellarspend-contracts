@@ -195,12 +195,16 @@ pub enum DataKey {
     Milestone(u64),
     /// Goal's milestones (goal_id -> Vec<milestone_id>)
     GoalMilestones(u64),
+    /// Goal's milestone percentages triggered (goal_id -> Vec<u32>)
+    GoalMilestonesPercent(u64),
     /// Total milestones achieved lifetime
     TotalMilestonesAchieved,
 }
 
 /// Error codes for goal validation and creation.
 pub mod ErrorCode {
+    /// Milestone not yet achieved (progress too low)
+    pub const MILESTONE_NOT_YET_ACHIEVED: u32 = 10;
     /// Invalid goal amount (too low or negative)
     pub const INVALID_AMOUNT: u32 = 0;
     /// Invalid deadline (in the past or too far in future)
@@ -275,7 +279,11 @@ impl GoalEvents {
 
     /// Event emitted when a milestone is successfully achieved.
     pub fn milestone_achieved(env: &Env, batch_id: u64, milestone: &MilestoneAchievement) {
-        let topics = (symbol_short!("milestone"), symbol_short!("achieved"), batch_id);
+        let topics = (
+            symbol_short!("milestone"),
+            symbol_short!("achieved"),
+            batch_id,
+        );
         env.events().publish(
             topics,
             (
@@ -285,10 +293,19 @@ impl GoalEvents {
             ),
         );
     }
+    /// Event emitted when a milestone percentage is achieved automatically.
+    pub fn milestone_achieved_percent(env: &Env, goal_id: u64, milestone_percent: u32) {
+        let topics = (symbol_short!("milestone"), symbol_short!("auto"), goal_id);
+        env.events().publish(topics, (goal_id, milestone_percent));
+    }
 
     /// Event emitted when milestone achievement fails.
     pub fn milestone_achievement_failed(env: &Env, batch_id: u64, goal_id: u64, error_code: u32) {
-        let topics = (symbol_short!("milestone"), symbol_short!("failed"), batch_id);
+        let topics = (
+            symbol_short!("milestone"),
+            symbol_short!("failed"),
+            batch_id,
+        );
         env.events().publish(topics, (goal_id, error_code));
     }
 

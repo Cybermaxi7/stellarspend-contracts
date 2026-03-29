@@ -1,5 +1,5 @@
 //! # Access Control Contract
-//! 
+//!
 //! A robust Role-Based Access Control (RBAC) system for StellarSpend contracts.
 //! Supports multiple roles with hierarchical permissions and comprehensive event logging.
 
@@ -65,21 +65,21 @@ impl AccessControlContract {
     /// Initialize the contract with an admin address
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("Contract already initialized");
+            panic_with_error!(&env, AccessControlError::NotInitialized);
         }
 
         admin.require_auth();
 
         // Set the admin
         env.storage().instance().set(&DataKey::Admin, &admin);
-        
+
         // Assign admin role to the initializer
         let mut roles = Map::new(&env);
         roles.set(Role::Admin, true);
         env.storage()
             .instance()
             .set(&DataKey::UserRoles(admin.clone()), &roles);
-        
+
         // Initialize counters
         env.storage()
             .instance()
@@ -184,6 +184,22 @@ impl AccessControlContract {
         roles.get(role).unwrap_or(false)
     }
 
+    /// Check permissions for an action (generic gate)
+    pub fn check_permission(env: Env, user: Address, role: Role) {
+        let roles: Map<Role, bool> = env
+            .storage()
+            .instance()
+            .get(&DataKey::UserRoles(user.clone()))
+            .unwrap_or(Map::new(&env));
+
+        let is_admin = roles.get(Role::Admin).unwrap_or(false);
+        let has_role = roles.get(role).unwrap_or(false);
+
+        if !is_admin && !has_role {
+            panic_with_error!(&env, AccessControlError::Unauthorized);
+        }
+    }
+
     /// Get all roles for a user
     pub fn get_user_roles(env: Env, user: Address) -> Map<Role, bool> {
         env.storage()
@@ -234,7 +250,7 @@ impl AccessControlContract {
         env.storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("Contract not initialized")
+            .unwrap_or_else(|| panic_with_error!(&env, AccessControlError::NotInitialized))
     }
 
     /// Get total number of role assignments
@@ -244,45 +260,17 @@ impl AccessControlContract {
             .get(&DataKey::TotalRoleAssignments)
             .unwrap_or(0)
     }
+}
 
-    /// Require that the caller has admin role
-    pub fn require_admin(env: &Env, caller: &Address) {
+impl AccessControlContract {
+    /// Internal helper: Require that the caller has admin role
+    fn require_admin(env: &Env, caller: &Address) {
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("Contract not initialized");
-
-        if *caller != admin {
-            panic_with_error!(env, AccessControlError::Unauthorized);
-        }
-    }
-
-    /// Require that the caller has a specific role
-    pub fn require_role(env: &Env, caller: &Address, role: Role) {
-        let roles: Map<Role, bool> = env
-            .storage()
-            .instance()
-            .get(&DataKey::UserRoles(caller.clone()))
-            .unwrap_or(Map::new(env));
-
-        if !roles.get(role).unwrap_or(false) {
-            panic_with_error!(env, AccessControlError::Unauthorized);
-        }
-    }
-
-    /// Require that the caller has admin OR a specific role
-    pub fn require_admin_or_role(env: &Env, caller: &Address, role: Role) {
-        let roles: Map<Role, bool> = env
-            .storage()
-            .instance()
-            .get(&DataKey::UserRoles(caller.clone()))
-            .unwrap_or(Map::new(env));
-
-        let is_admin = roles.get(Role::Admin).unwrap_or(false);
-        let has_role = roles.get(role).unwrap_or(false);
-
-        if !is_admin && !has_role {
+            .unwrap_or_else(|| panic_with_error!(env, AccessControlError::NotInitialized));
+        if caller != &admin {
             panic_with_error!(env, AccessControlError::Unauthorized);
         }
     }

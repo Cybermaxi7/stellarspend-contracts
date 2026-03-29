@@ -106,7 +106,7 @@ impl BatchRewardsContract {
     }
 
     /// Distributes rewards to multiple recipients in a batch operation.
-    /// 
+    ///
     /// # Arguments
     /// * `env` - The Soroban environment
     /// * `caller` - The address initiating the batch rewards
@@ -156,9 +156,9 @@ impl BatchRewardsContract {
 
         // Get initial balance to ensure sufficient funds
         let available_balance = token_client.balance(&caller);
-        let total_required: i128 = rewards.iter().fold(0i128, |sum, reward| {
-            sum + reward.amount
-        });
+        let total_required: i128 = rewards
+            .iter()
+            .fold(0i128, |sum, reward| sum + reward.amount);
 
         if available_balance < total_required {
             panic_with_error!(&env, BatchRewardsError::InsufficientBalance);
@@ -175,7 +175,13 @@ impl BatchRewardsContract {
                     reward.amount,
                     error_code,
                 ));
-                RewardEvents::reward_failure(&env, batch_id, &reward.recipient, reward.amount, error_code);
+                RewardEvents::reward_failure(
+                    &env,
+                    batch_id,
+                    &reward.recipient,
+                    reward.amount,
+                    error_code,
+                );
                 continue;
             }
 
@@ -188,7 +194,13 @@ impl BatchRewardsContract {
                     reward.amount,
                     error_code,
                 ));
-                RewardEvents::reward_failure(&env, batch_id, &reward.recipient, reward.amount, error_code);
+                RewardEvents::reward_failure(
+                    &env,
+                    batch_id,
+                    &reward.recipient,
+                    reward.amount,
+                    error_code,
+                );
                 continue;
             }
 
@@ -211,7 +223,13 @@ impl BatchRewardsContract {
                         reward.amount,
                         error_code,
                     ));
-                    RewardEvents::reward_failure(&env, batch_id, &reward.recipient, reward.amount, error_code);
+                    RewardEvents::reward_failure(
+                        &env,
+                        batch_id,
+                        &reward.recipient,
+                        reward.amount,
+                        error_code,
+                    );
                 }
             }
         }
@@ -220,7 +238,7 @@ impl BatchRewardsContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalBatches, &batch_id);
-        
+
         let total_processed: u64 = env
             .storage()
             .instance()
@@ -242,7 +260,13 @@ impl BatchRewardsContract {
             .set(&DataKey::TotalVolumeDistributed, &total_volume);
 
         // Emit batch completed event
-        RewardEvents::batch_completed(&env, batch_id, successful_count, failed_count, total_distributed);
+        RewardEvents::batch_completed(
+            &env,
+            batch_id,
+            successful_count,
+            failed_count,
+            total_distributed,
+        );
 
         BatchRewardResult {
             total_requests: request_count as u32,

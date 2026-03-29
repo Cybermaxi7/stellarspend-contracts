@@ -12,7 +12,13 @@ use soroban_sdk::{
 };
 
 /// Creates a test environment with the contract deployed and initialized.
-fn setup_test_env() -> (Env, Address, Address, token::Client<'static>, SharedBudgetContractClient<'static>) {
+fn setup_test_env() -> (
+    Env,
+    Address,
+    Address,
+    token::Client<'static>,
+    SharedBudgetContractClient<'static>,
+) {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().with_mut(|li| {
@@ -228,7 +234,7 @@ fn test_budget_events_emitted() {
     // Check that events were emitted
     let events = env.events().all();
     assert!(events.len() >= 1); // At least budget creation event
-    
+
     // Check that events were emitted (simplified check)
     assert!(!events.is_empty());
 }

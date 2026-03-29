@@ -1,15 +1,15 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{testutils::Address as _, testutils::Events, Address, Env};
 
 fn create_pausable_contract<'a>(env: &Env) -> (PausableContractClient<'a>, Address) {
     let contract_id = env.register_contract(None, PausableContract);
     let client = PausableContractClient::new(env, &contract_id);
     let admin = Address::generate(env);
-    
+
     client.initialize(&admin);
-    
+
     (client, admin)
 }
 
@@ -152,20 +152,22 @@ fn test_pause_unpause_events() {
     let (client, admin) = create_pausable_contract(&env);
 
     client.pause(&admin);
-    
+
     let events = env.events().all();
     let pause_event = events.iter().find(|e| {
-        e.topics.get(0).unwrap() == &soroban_sdk::symbol_short!("pausable")
-            && e.topics.get(1).unwrap() == &soroban_sdk::symbol_short!("paused")
+        let topic0 = soroban_sdk::Symbol::try_from_val(&env, e.1.get(0).unwrap()).unwrap();
+        let topic1 = soroban_sdk::Symbol::try_from_val(&env, e.1.get(1).unwrap()).unwrap();
+        topic0 == soroban_sdk::symbol_short!("pausable") && topic1 == soroban_sdk::symbol_short!("paused")
     });
     assert!(pause_event.is_some());
 
     client.unpause(&admin);
-    
+
     let events = env.events().all();
     let unpause_event = events.iter().find(|e| {
-        e.topics.get(0).unwrap() == &soroban_sdk::symbol_short!("pausable")
-            && e.topics.get(1).unwrap() == &soroban_sdk::symbol_short!("unpaused")
+        let topic0 = soroban_sdk::Symbol::try_from_val(&env, e.1.get(0).unwrap()).unwrap();
+        let topic1 = soroban_sdk::Symbol::try_from_val(&env, e.1.get(1).unwrap()).unwrap();
+        topic0 == soroban_sdk::symbol_short!("pausable") && topic1 == soroban_sdk::symbol_short!("unpaused")
     });
     assert!(unpause_event.is_some());
 }
@@ -179,11 +181,12 @@ fn test_admin_changed_event() {
     let new_admin = Address::generate(&env);
 
     client.set_admin(&admin, &new_admin);
-    
+
     let events = env.events().all();
     let admin_changed_event = events.iter().find(|e| {
-        e.topics.get(0).unwrap() == &soroban_sdk::symbol_short!("pausable")
-            && e.topics.get(1).unwrap() == &soroban_sdk::symbol_short!("admin_changed")
+        let topic0 = soroban_sdk::Symbol::try_from_val(&env, e.1.get(0).unwrap()).unwrap();
+        let topic1 = soroban_sdk::Symbol::try_from_val(&env, e.1.get(1).unwrap()).unwrap();
+        topic0 == soroban_sdk::symbol_short!("pausable") && topic1 == soroban_sdk::symbol_short!("adminchgd")
     });
     assert!(admin_changed_event.is_some());
 }
@@ -198,7 +201,7 @@ fn test_multiple_pause_unpause_cycles() {
     for _ in 0..3 {
         client.pause(&admin);
         assert_eq!(client.is_paused(), true);
-        
+
         client.unpause(&admin);
         assert_eq!(client.is_paused(), false);
     }

@@ -127,11 +127,7 @@ impl WalletEvents {
 
     /// Event emitted when a balance is successfully updated.
     pub fn balance_updated(env: &Env, batch_id: u64, balance: &CurrencyBalance) {
-        let topics = (
-            symbol_short!("balance"),
-            symbol_short!("updated"),
-            batch_id,
-        );
+        let topics = (symbol_short!("balance"), symbol_short!("updated"), batch_id);
         env.events().publish(
             topics,
             (

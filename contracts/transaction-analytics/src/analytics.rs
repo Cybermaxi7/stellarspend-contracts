@@ -1,9 +1,9 @@
 use soroban_sdk::{Address, Env, Map, Symbol, Vec};
 
 use crate::types::{
-    AuditLog, BatchMetrics, CategoryMetrics, Transaction, RefundRequest, RefundResult, 
-    RefundStatus, RefundBatchMetrics, BundleResult, BundledTransaction, ValidationResult,
-    MAX_BATCH_SIZE, MonthlySpendingAnalytics, UserSpendingSummary, DataKey,
+    AuditLog, BatchMetrics, BundleResult, BundledTransaction, CategoryMetrics, DataKey,
+    MonthlySpendingAnalytics, RefundBatchMetrics, RefundRequest, RefundResult, RefundStatus,
+    Transaction, UserSpendingSummary, ValidationResult, MAX_BATCH_SIZE,
 };
 
 /// Calculates the processing fee for a transaction amount.
@@ -268,17 +268,17 @@ pub fn process_refund_batch(
     refunded_txs: &mut Map<u64, bool>,
 ) -> Vec<RefundResult> {
     let mut results: Vec<RefundResult> = Vec::new(env);
-    
+
     for request in refund_requests.iter() {
         let status = validate_refund_eligibility(env, request.tx_id, refunded_txs);
-        
+
         match status {
             RefundStatus::Eligible => {
                 // Check if transaction exists
                 if let Some(transaction) = transaction_lookup.get(request.tx_id) {
                     // Mark as refunded to prevent duplicates
                     refunded_txs.set(request.tx_id, true);
-                    
+
                     let result = RefundResult {
                         tx_id: request.tx_id,
                         success: true,
@@ -297,7 +297,7 @@ pub fn process_refund_batch(
                     };
                     results.push_back(result);
                 }
-            },
+            }
             _ => {
                 // Handle ineligible refunds
                 let error_msg = match status {
@@ -307,7 +307,7 @@ pub fn process_refund_batch(
                     RefundStatus::NotFound => Some(Symbol::new(env, "TxNotFound")),
                     _ => Some(Symbol::new(env, "UnknownError")),
                 };
-                
+
                 let result = RefundResult {
                     tx_id: request.tx_id,
                     success: false,
@@ -319,7 +319,7 @@ pub fn process_refund_batch(
             }
         }
     }
-    
+
     results
 }
 
@@ -330,7 +330,7 @@ pub fn compute_refund_metrics(
     processed_at: u64,
 ) -> RefundBatchMetrics {
     let request_count = refund_results.len();
-    
+
     if request_count == 0 {
         return RefundBatchMetrics {
             request_count: 0,
@@ -341,11 +341,11 @@ pub fn compute_refund_metrics(
             processed_at,
         };
     }
-    
+
     let mut successful_refunds: u32 = 0;
     let mut failed_refunds: u32 = 0;
     let mut total_refunded_amount: i128 = 0;
-    
+
     for result in refund_results.iter() {
         if result.success {
             successful_refunds += 1;
@@ -356,13 +356,13 @@ pub fn compute_refund_metrics(
             failed_refunds += 1;
         }
     }
-    
+
     let avg_refund_amount = if successful_refunds > 0 {
         total_refunded_amount / (successful_refunds as i128)
     } else {
         0
     };
-    
+
     RefundBatchMetrics {
         request_count: request_count as u32,
         successful_refunds,
@@ -401,7 +401,7 @@ pub fn validate_transaction_for_bundle(
         };
     }
 
-    // Validate amount is not zero 
+    // Validate amount is not zero
     // For now, we'll allow zero amounts
 
     // Transaction is valid
@@ -476,32 +476,35 @@ pub fn create_bundle_result(
 }
 
 /// Validates a batch of refund requests.
-pub fn validate_refund_batch(env: &Env, refund_requests: &Vec<RefundRequest>) -> Result<(), &'static str> {
+pub fn validate_refund_batch(
+    env: &Env,
+    refund_requests: &Vec<RefundRequest>,
+) -> Result<(), &'static str> {
     let count = refund_requests.len() as u32;
-    
+
     if count == 0 {
         return Err("Refund batch cannot be empty");
     }
-    
+
     if count > MAX_BATCH_SIZE {
         return Err("Refund batch exceeds maximum size");
     }
-    
+
     // Check for duplicate transaction IDs
     let mut seen_tx_ids: Map<u64, bool> = Map::new(env);
-    
+
     for request in refund_requests.iter() {
         if seen_tx_ids.contains_key(request.tx_id) {
             return Err("Duplicate transaction ID in refund batch");
         }
         seen_tx_ids.set(request.tx_id, true);
     }
-    
+
     Ok(())
 }
 
 /// Computes aggregated analytics for user spending patterns
-/// 
+///
 /// Stores monthly totals and tracks category spending
 pub fn compute_monthly_analytics(
     env: &Env,
@@ -556,7 +559,7 @@ fn update_category_spending(
         // Update existing category
         let (_, existing_amount) = category_spending.get(index).unwrap();
         let new_amount = existing_amount.checked_add(amount).unwrap_or(i128::MAX);
-        
+
         // Remove the old entry and re-add with updated amount
         let mut new_vec = Vec::new(env);
         for i in 0..category_spending.len() {
@@ -574,32 +577,33 @@ fn update_category_spending(
 }
 
 /// Updates or creates monthly analytics in storage
-pub fn update_monthly_analytics_storage(
-    env: &Env,
-    analytics: &MonthlySpendingAnalytics,
-) {
+pub fn update_monthly_analytics_storage(env: &Env, analytics: &MonthlySpendingAnalytics) {
     let key = DataKey::MonthlyAnalytics(analytics.year, analytics.month, analytics.user.clone());
     env.storage().persistent().set(&key, &analytics);
-    
+
     // Update total tracked users if this is a new user
     let mut total_users: u64 = env
         .storage()
         .instance()
         .get(&DataKey::TotalTrackedUsers)
         .unwrap_or(0);
-        
+
     let user_summary_key = DataKey::UserSpendingSummary(analytics.user.clone());
     if !env.storage().persistent().has(&user_summary_key) {
         total_users += 1;
-        env.storage().instance().set(&DataKey::TotalTrackedUsers, &total_users);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalTrackedUsers, &total_users);
     }
-    
+
     // Update last analytics update timestamp
-    env.storage().instance().set(&DataKey::LastAnalyticsUpdate, &env.ledger().sequence());
+    env.storage()
+        .instance()
+        .set(&DataKey::LastAnalyticsUpdate, &env.ledger().sequence());
 }
 
 /// Computes aggregated analytics for all users and categories
-/// 
+///
 /// This function analyzes spending patterns across all users
 pub fn compute_aggregated_analytics(
     env: &Env,
@@ -623,11 +627,19 @@ pub fn compute_aggregated_analytics(
             }
         };
 
-        user_data.total_spending = user_data.total_spending.checked_add(tx.amount).unwrap_or(i128::MAX);
+        user_data.total_spending = user_data
+            .total_spending
+            .checked_add(tx.amount)
+            .unwrap_or(i128::MAX);
         user_data.transaction_count += 1;
 
         // Update category spending for user
-        update_category_spending(env, &mut user_data.category_spending, tx.category.clone(), tx.amount);
+        update_category_spending(
+            env,
+            &mut user_data.category_spending,
+            tx.category.clone(),
+            tx.amount,
+        );
 
         user_analytics.set(tx.from.clone(), user_data);
 
@@ -656,13 +668,20 @@ pub fn compute_user_spending_summary(
 
     for analytics in monthly_analytics.iter() {
         if &analytics.user == user {
-            total_spending = total_spending.checked_add(analytics.total_spending).unwrap_or(i128::MAX);
-            total_transactions = total_transactions.checked_add(analytics.transaction_count).unwrap_or(u32::MAX);
+            total_spending = total_spending
+                .checked_add(analytics.total_spending)
+                .unwrap_or(i128::MAX);
+            total_transactions = total_transactions
+                .checked_add(analytics.transaction_count)
+                .unwrap_or(u32::MAX);
 
             // Aggregate category spending across months
             for (category, amount) in analytics.category_spending.iter() {
                 let category_total = category_totals.get(category.clone()).unwrap_or(0);
-                category_totals.set(category.clone(), category_total.checked_add(amount).unwrap_or(i128::MAX));
+                category_totals.set(
+                    category.clone(),
+                    category_total.checked_add(amount).unwrap_or(i128::MAX),
+                );
 
                 // Update primary category if this is the highest spending category
                 if category_total.checked_add(amount).unwrap_or(i128::MAX) > max_category_amount {

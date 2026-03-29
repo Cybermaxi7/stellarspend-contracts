@@ -2,7 +2,10 @@
 
 use soroban_sdk::{Address, Env};
 
-use crate::types::{DataKey, ErrorCode, MilestoneAchievementRequest, SavingsGoal, SavingsGoalRequest, MAX_GOAL_AMOUNT, MIN_GOAL_AMOUNT};
+use crate::types::{
+    DataKey, ErrorCode, MilestoneAchievementRequest, SavingsGoal, SavingsGoalRequest,
+    MAX_GOAL_AMOUNT, MIN_GOAL_AMOUNT,
+};
 
 /// Validates a savings goal request.
 ///
@@ -79,9 +82,9 @@ pub fn is_valid_deadline(env: &Env, deadline: u64) -> bool {
     }
 
     // Deadline should not be more than ~5 years in the future
-    // Assuming ~5 second ledger close time, 5 years = ~31.5M ledgers
+    // Use saturating_add to avoid overflow
     let max_future_ledgers = 31_536_000u64; // ~5 years
-    if deadline > current_ledger + max_future_ledgers {
+    if deadline > current_ledger.saturating_add(max_future_ledgers) {
         return false;
     }
 
@@ -135,7 +138,10 @@ pub fn validate_batch(requests: &soroban_sdk::Vec<SavingsGoalRequest>) -> Result
 /// # Returns
 /// * `Ok(())` if valid
 /// * `Err(error_code)` if invalid
-pub fn validate_milestone_request(env: &Env, request: &MilestoneAchievementRequest) -> Result<(), u32> {
+pub fn validate_milestone_request(
+    env: &Env,
+    request: &MilestoneAchievementRequest,
+) -> Result<(), u32> {
     // Validate milestone percentage (must be 1-100)
     if request.milestone_percentage < 1 || request.milestone_percentage > 100 {
         return Err(ErrorCode::INVALID_MILESTONE_PERCENTAGE);
@@ -146,7 +152,7 @@ pub fn validate_milestone_request(env: &Env, request: &MilestoneAchievementReque
         .storage()
         .persistent()
         .get(&DataKey::Goal(request.goal_id));
-    
+
     if goal.is_none() {
         return Err(ErrorCode::GOAL_NOT_FOUND);
     }

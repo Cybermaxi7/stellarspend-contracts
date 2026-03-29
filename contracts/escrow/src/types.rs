@@ -24,6 +24,7 @@ pub struct Escrow {
     pub escrow_id: u64,
     pub depositor: Address,
     pub recipient: Address,
+    pub arbiter: Option<Address>,
     pub token: Address,
     pub amount: i128,
     pub status: EscrowStatus,
@@ -127,11 +128,20 @@ impl EscrowEvents {
         escrow_id: u64,
         depositor: &Address,
         recipient: &Address,
+        arbiter: &Option<Address>,
         amount: i128,
     ) {
         let topics = (symbol_short!("escrow"), symbol_short!("created"));
-        env.events()
-            .publish(topics, (escrow_id, depositor.clone(), recipient.clone(), amount));
+        env.events().publish(
+            topics,
+            (
+                escrow_id,
+                depositor.clone(),
+                recipient.clone(),
+                arbiter.clone(),
+                amount,
+            ),
+        );
     }
 
     /// Emitted when a batch reversal starts.
@@ -168,13 +178,15 @@ impl EscrowEvents {
         total_reversed: i128,
     ) {
         let topics = (symbol_short!("escrow"), symbol_short!("rev_done"), batch_id);
-        env.events().publish(topics, (successful, failed, total_reversed));
+        env.events()
+            .publish(topics, (successful, failed, total_reversed));
     }
 
     /// Emitted when an escrow is released to recipient.
     pub fn escrow_released(env: &Env, escrow_id: u64, recipient: &Address, amount: i128) {
         let topics = (symbol_short!("escrow"), symbol_short!("released"));
-        env.events().publish(topics, (escrow_id, recipient.clone(), amount));
+        env.events()
+            .publish(topics, (escrow_id, recipient.clone(), amount));
     }
 
     /// Emitted when a batch release starts.
@@ -192,7 +204,8 @@ impl EscrowEvents {
         amount: i128,
     ) {
         let topics = (symbol_short!("escrow"), symbol_short!("rel_ok"), batch_id);
-        env.events().publish(topics, (escrow_id, recipient.clone(), amount));
+        env.events()
+            .publish(topics, (escrow_id, recipient.clone(), amount));
     }
 
     /// Emitted when a single escrow release fails.
@@ -210,6 +223,7 @@ impl EscrowEvents {
         total_released: i128,
     ) {
         let topics = (symbol_short!("escrow"), symbol_short!("rel_done"), batch_id);
-        env.events().publish(topics, (successful, failed, total_released));
+        env.events()
+            .publish(topics, (successful, failed, total_released));
     }
 }

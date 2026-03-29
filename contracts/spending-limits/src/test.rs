@@ -412,3 +412,74 @@ fn test_maximum_valid_limit() {
     assert_eq!(result.successful, 1);
     assert_eq!(result.failed, 0);
 }
+
+#[test]
+fn test_enforce_spending_limit_allows_within_daily_and_monthly() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Configure a monthly limit of 300 units; derived daily limit is 10 units.
+    let mut requests: Vec<SpendingLimitRequest> = Vec::new(&env);
+    requests.push_back(create_valid_request(&env, &user, 300));
+    client.batch_update_spending_limits(&admin, &requests);
+
+    // Same timestamp (same logical day/month).
+    env.ledger().set_timestamp(86_400); // day 1
+
+    // Two spends of 5 each are within daily (10) and monthly (300) limits.
+    client.enforce_spending_limit(&user, &5);
+    client.enforce_spending_limit(&user, &5);
+}
+
+#[test]
+#[should_panic]
+fn test_enforce_spending_limit_daily_exceeded() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Monthly 300 -> daily 10
+    let mut requests: Vec<SpendingLimitRequest> = Vec::new(&env);
+    requests.push_back(create_valid_request(&env, &user, 300));
+    client.batch_update_spending_limits(&admin, &requests);
+
+    env.ledger().set_timestamp(2 * 86_400); // day 2
+
+    // 2 * 5 is allowed; the third spend pushes daily total above 10 and should panic.
+    client.enforce_spending_limit(&user, &5);
+    client.enforce_spending_limit(&user, &5);
+    client.enforce_spending_limit(&user, &1);
+}
+
+#[test]
+#[should_panic]
+fn test_enforce_spending_limit_monthly_exceeded_over_multiple_days() {
+    let (env, admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    // Monthly 30, daily 1 (30 / 30) => 1 unit per day max, 30 units per month.
+    let mut requests: Vec<SpendingLimitRequest> = Vec::new(&env);
+    requests.push_back(create_valid_request(&env, &user, 30));
+    client.batch_update_spending_limits(&admin, &requests);
+
+    // Spend 1 unit on 30 different "days" within the same logical month window.
+    for d in 0..30u64 {
+        env.ledger().set_timestamp(d * 86_400);
+        client.enforce_spending_limit(&user, &1);
+    }
+
+    // Next day is still within the same 30-day "month" bucket and should exceed the
+    // monthly limit, even though the daily limit would allow it.
+    env.ledger().set_timestamp(30 * 86_400);
+    client.enforce_spending_limit(&user, &1);
+}
+
+#[test]
+fn test_enforce_without_limit_does_not_block() {
+    let (env, _admin, client) = setup_test_contract();
+    let user = Address::generate(&env);
+
+    env.ledger().set_timestamp(10 * 86_400);
+
+    // No limit configured for this user; enforce should be a no-op and not panic.
+    client.enforce_spending_limit(&user, &1_000_000);
+}

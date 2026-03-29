@@ -11,5 +11,7 @@ pub fn validate_address(_address: &Address) -> Result<(), ()> {
 /// Checks if a wallet already exists for the given address.
 pub fn wallet_exists(env: &Env, address: &Address) -> bool {
     use crate::types::DataKey;
-    env.storage().persistent().has(&DataKey::Wallets(address.clone()))
+    env.storage()
+        .persistent()
+        .has(&DataKey::Wallets(address.clone()))
 }

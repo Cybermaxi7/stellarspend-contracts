@@ -24,13 +24,13 @@ pub fn validate_amount(amount: i128) -> Result<(), ValidationError> {
     if amount <= 0 {
         return Err(ValidationError::InvalidAmount);
     }
-    
+
     // Amount must not exceed a reasonable maximum
     // (e.g., to prevent overflow or misuse)
     if amount > i128::MAX / 2 {
         return Err(ValidationError::InvalidAmount);
     }
-    
+
     Ok(())
 }
 

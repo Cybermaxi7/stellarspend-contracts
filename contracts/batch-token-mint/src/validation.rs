@@ -101,7 +101,10 @@ mod tests {
         let env = Env::default();
         let mut request = create_valid_request(&env);
         request.amount = 0;
-        assert_eq!(validate_mint_request(&request), Err(ErrorCode::INVALID_AMOUNT));
+        assert_eq!(
+            validate_mint_request(&request),
+            Err(ErrorCode::INVALID_AMOUNT)
+        );
     }
 
     #[test]
@@ -109,7 +112,10 @@ mod tests {
         let env = Env::default();
         let mut request = create_valid_request(&env);
         request.amount = -1000;
-        assert_eq!(validate_mint_request(&request), Err(ErrorCode::INVALID_AMOUNT));
+        assert_eq!(
+            validate_mint_request(&request),
+            Err(ErrorCode::INVALID_AMOUNT)
+        );
     }
 
     #[test]
@@ -117,7 +123,10 @@ mod tests {
         let env = Env::default();
         let mut request = create_valid_request(&env);
         request.amount = MAX_MINT_AMOUNT + 1;
-        assert_eq!(validate_mint_request(&request), Err(ErrorCode::INVALID_AMOUNT));
+        assert_eq!(
+            validate_mint_request(&request),
+            Err(ErrorCode::INVALID_AMOUNT)
+        );
     }
 
     #[test]
@@ -134,9 +143,9 @@ mod tests {
     fn test_validate_batch() {
         let env = Env::default();
         let mut requests: soroban_sdk::Vec<TokenMintRequest> = soroban_sdk::Vec::new(&env);
-        
+
         assert!(validate_batch(&requests).is_err());
-        
+
         requests.push_back(create_valid_request(&env));
         assert!(validate_batch(&requests).is_ok());
     }

@@ -46,6 +46,12 @@ pub enum SpendingLimitError {
     EmptyBatch = 4,
     /// Batch exceeds maximum size
     BatchTooLarge = 5,
+    /// Daily limit exceeded
+    DailyLimitExceeded = 6,
+    /// Monthly limit exceeded
+    MonthlyLimitExceeded = 7,
+    /// Invalid spend amount
+    InvalidAmount = 8,
 }
 
 impl From<SpendingLimitError> for soroban_sdk::Error {
@@ -189,10 +195,7 @@ impl SpendingLimitsContract {
                     // Emit failure event
                     LimitEvents::limit_update_failed(&env, batch_id, &request.user, error_code);
 
-                    results.push_back(LimitUpdateResult::Failure(
-                        request.user.clone(),
-                        error_code,
-                    ));
+                    results.push_back(LimitUpdateResult::Failure(request.user.clone(), error_code));
                 }
             }
         }
@@ -254,6 +257,115 @@ impl SpendingLimitsContract {
             results,
             metrics,
         }
+    }
+
+    /// Enforces the configured daily and monthly spending limits for a user.
+    ///
+    /// This function:
+    /// - Tracks per-user daily and monthly totals using the current ledger timestamp.
+    /// - Rejects spends that would exceed either the derived daily limit or the stored
+    ///   monthly limit.
+    /// - Emits a `limit_exceeded` event when a violation occurs.
+    ///
+    /// If no limit is configured for the user or the limit is inactive, the spend is
+    /// allowed and no state is updated.
+    pub fn enforce_spending_limit(env: Env, user: Address, amount: i128) {
+        // Validate amount
+        if amount <= 0 {
+            panic_with_error!(&env, SpendingLimitError::InvalidAmount);
+        }
+
+        // Look up configured limit; if none, there is nothing to enforce.
+        let mut limit: SpendingLimit = match env
+            .storage()
+            .persistent()
+            .get(&DataKey::SpendingLimit(user.clone()))
+        {
+            Some(l) => l,
+            None => return,
+        };
+
+        if !limit.is_active {
+            return;
+        }
+
+        let now = env.ledger().timestamp();
+
+        // Derive simple logical day/month identifiers from timestamp.
+        const SECONDS_PER_DAY: u64 = 86_400;
+        const SECONDS_PER_MONTH: u64 = SECONDS_PER_DAY * 30;
+
+        let day_id = now / SECONDS_PER_DAY;
+        let month_id = now / SECONDS_PER_MONTH;
+
+        // Load current daily and monthly totals.
+        let daily_key = DataKey::DailySpending(user.clone(), day_id);
+        let monthly_key = DataKey::MonthlySpending(user.clone(), month_id);
+
+        let current_daily: i128 = env.storage().persistent().get(&daily_key).unwrap_or(0);
+        let current_monthly: i128 = env.storage().persistent().get(&monthly_key).unwrap_or(0);
+
+        let new_daily = current_daily
+            .checked_add(amount)
+            .unwrap_or_else(|| panic_with_error!(&env, SpendingLimitError::InvalidBatch));
+        let new_monthly = current_monthly
+            .checked_add(amount)
+            .unwrap_or_else(|| panic_with_error!(&env, SpendingLimitError::InvalidBatch));
+
+        // Derive a daily limit from the monthly limit (simple 30-day split).
+        let daily_limit = if limit.monthly_limit <= 0 {
+            0
+        } else {
+            let base = limit.monthly_limit / 30;
+            if base == 0 {
+                1
+            } else {
+                base
+            }
+        };
+
+        let mut daily_ok = true;
+        let mut monthly_ok = true;
+
+        if new_daily > daily_limit {
+            daily_ok = false;
+        }
+        if new_monthly > limit.monthly_limit {
+            monthly_ok = false;
+        }
+
+        if !daily_ok || !monthly_ok {
+            let remaining_daily = if current_daily >= daily_limit {
+                0
+            } else {
+                daily_limit - current_daily
+            };
+            let remaining_monthly = if current_monthly >= limit.monthly_limit {
+                0
+            } else {
+                limit.monthly_limit - current_monthly
+            };
+
+            LimitEvents::limit_exceeded(&env, &user, amount, remaining_daily, remaining_monthly);
+
+            if !daily_ok {
+                panic_with_error!(&env, SpendingLimitError::DailyLimitExceeded);
+            } else {
+                panic_with_error!(&env, SpendingLimitError::MonthlyLimitExceeded);
+            }
+        }
+
+        // Persist updated totals.
+        env.storage().persistent().set(&daily_key, &new_daily);
+        env.storage().persistent().set(&monthly_key, &new_monthly);
+
+        // Keep the embedded "current_spending" and "updated_at" in sync with the
+        // current logical month usage.
+        limit.current_spending = new_monthly;
+        limit.updated_at = month_id;
+        env.storage()
+            .persistent()
+            .set(&DataKey::SpendingLimit(user), &limit);
     }
 
     /// Retrieves a user's spending limit.

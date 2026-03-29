@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Symbol, Vec, Map};
+use soroban_sdk::{contracttype, Address, Map, Symbol, Vec};
 
 /// Request structure for setting a user's budget
 #[contracttype]
@@ -58,7 +58,7 @@ pub enum DataKey {
     Admin,
     Budget(Address),
     BudgetCategories(Address), // User's budget categories
-    TotalAllocated, // Track global stats if needed
+    TotalAllocated,            // Track global stats if needed
 }
 
 /// Result of a batch budget allocation operation

@@ -1,8 +1,8 @@
 #![no_std]
 
-mod types;
 #[cfg(test)]
 mod test;
+mod types;
 
 use crate::types::{DataKey, RecurringPayment};
 use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env};
@@ -62,9 +62,7 @@ impl RecurringPaymentContract {
         env.storage()
             .instance()
             .set(&DataKey::Payment(count), &payment);
-        env.storage()
-            .instance()
-            .set(&DataKey::PaymentCount, &count);
+        env.storage().instance().set(&DataKey::PaymentCount, &count);
 
         env.events().publish(
             (symbol_short!("recur"), symbol_short!("created"), count),
@@ -74,7 +72,6 @@ impl RecurringPaymentContract {
         count
     }
 
- 
     /// # Arguments
     /// * `payment_id` - The ID returned by `create_payment`
     pub fn execute_payment(env: Env, payment_id: u64) {
@@ -97,18 +94,18 @@ impl RecurringPaymentContract {
         let token_client = token::Client::new(&env, &payment.token);
         token_client.transfer(&payment.sender, &payment.recipient, &payment.amount);
 
-        // Advance next_execution to the next future interval boundary.
-        // If the payment was triggered late (multiple intervals overdue),
-        // we skip forward so the next due date is always in the future.
-        //
-        // Formula: next = scheduled + ceil((current - scheduled) / interval) * interval
-        //
-        // Example: scheduled=1000, interval=3600, current=8700 (2.5 intervals overdue)
-        //   intervals_passed = (8700 - 1000) / 3600 = 2   (integer division)
-        //   next = 1000 + (2 + 1) * 3600 = 11800
-        let intervals_passed =
-            (current_time - payment.next_execution) / payment.interval;
-        payment.next_execution += (intervals_passed + 1) * payment.interval;
+        // Update next execution time
+        payment.next_execution += payment.interval;
+
+        // If the execution was delayed, we might want to skip or catch up.
+        // For simplicity, we just add the interval to the scheduled time.
+        // If current_time is way past next_execution, catch up.
+        if payment.next_execution <= current_time {
+            // Option 1: Catch up to the next interval in the future
+            // (current_time - scheduled) / interval * interval + scheduled + interval
+            let intervals_passed = (current_time - payment.next_execution) / payment.interval;
+            payment.next_execution += (intervals_passed + 1) * payment.interval;
+        }
 
         env.storage()
             .instance()

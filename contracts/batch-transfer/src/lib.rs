@@ -308,23 +308,14 @@ impl BatchTransferContract {
                     2,
                 ));
                 failed_count += 1;
-                TransferEvents::burn_failure(
-                    &env,
-                    batch_id,
-                    &request.owner,
-                    request.amount,
-                    2,
-                );
+                TransferEvents::burn_failure(&env, batch_id, &request.owner, request.amount, 2);
                 continue;
             }
 
             request.owner.require_auth();
             token_client.burn(&request.owner, &request.amount);
 
-            results.push_back(BurnResult::Success(
-                request.owner.clone(),
-                request.amount,
-            ));
+            results.push_back(BurnResult::Success(request.owner.clone(), request.amount));
             successful_count += 1;
             total_burned = total_burned
                 .checked_add(request.amount)
