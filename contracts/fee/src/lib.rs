@@ -1,6 +1,7 @@
 #![no_std]
 
 mod escrow;
+mod validation;
 mod storage;
 
 use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Address, Env, Vec};
@@ -14,6 +15,7 @@ use crate::storage::{
     read_total_released, read_treasury, write_admin, write_current_cycle, write_fee_bps,
 	write_locked, write_min_fee, write_token, write_treasury,
 };
+use crate::validation::{validate_fee_bps_or_panic, validate_min_fee_or_panic};
 pub use crate::storage::{BatchFeeResult, DataKey, MAX_BATCH_SIZE, MAX_FEE_BPS};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -113,7 +115,10 @@ impl FeeContract {
         if has_admin(&env) {
             panic!("Contract already initialized");
         }
-        if fee_bps > MAX_FEE_BPS || initial_cycle == 0 {
+		if initial_cycle == 0 {
+			panic_with_error!(&env, FeeContractError::InvalidConfig);
+		}
+		if !validate_fee_bps_or_panic(&env, fee_bps) {
             panic_with_error!(&env, FeeContractError::InvalidConfig);
         }
 
@@ -199,9 +204,7 @@ impl FeeContract {
         Self::require_admin(&env, &admin);
         Self::require_unlocked(&env);
 
-        if fee_bps > MAX_FEE_BPS {
-            panic_with_error!(&env, FeeContractError::InvalidConfig);
-        }
+		validate_fee_bps_or_panic(&env, fee_bps);
 
         write_fee_bps(&env, fee_bps);
         FeeEvents::fee_bps_updated(&env, fee_bps);
@@ -221,9 +224,7 @@ impl FeeContract {
 		Self::require_admin(&env, &admin);
 		Self::require_unlocked(&env);
 
-		if min_fee < 0 {
-			panic_with_error!(&env, FeeContractError::InvalidConfig);
-		}
+		validate_min_fee_or_panic(&env, min_fee);
 
 		write_min_fee(&env, min_fee);
 		FeeEvents::min_fee_updated(&env, min_fee);
@@ -312,6 +313,18 @@ impl FeeContract {
 				.unwrap_or_else(|| panic_with_error!(&env, FeeContractError::Overflow));
 		}
 		total
+	}
+
+	/// Validate a configuration tuple. Returns true or panics on invalid inputs.
+	///
+	/// Current checks:
+	/// - `fee_bps` within [0, MAX_FEE_BPS]
+	/// - `min_fee` >= 0
+	/// Extend this as new fee knobs are added.
+	pub fn validate_config(env: Env, fee_bps: u32, min_fee: i128) -> bool {
+		validate_fee_bps_or_panic(&env, fee_bps);
+		validate_min_fee_or_panic(&env, min_fee);
+		true
 	}
 
     fn require_admin(env: &Env, caller: &Address) {
