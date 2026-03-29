@@ -157,6 +157,18 @@ pub struct BatchFeeResult {
     pub total_fees: i128,
 }
 
+/// Aggregated on-chain metrics for the fee contract (read-only snapshot).
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct FeeContractMetrics {
+    /// Cumulative fees collected across all deduction paths; matches [`FeeContract::get_total_collected`].
+    pub total_fees_collected: i128,
+    /// Default fee rate in basis points when a fee config exists; otherwise `0`.
+    pub default_fee_rate_bps: u32,
+    pub ledger_timestamp: u64,
+    pub ledger_sequence: u32,
+}
+
 /// Configuration for a specific asset's fee settings.
 #[derive(Clone, Debug)]
 #[contracttype]
@@ -705,6 +717,24 @@ impl FeeContract {
             .instance()
             .get(&DataKey::TotalFeesCollected)
             .unwrap_or(0)
+    }
+
+    /// Returns cumulative fees collected plus key ledger fields for observability.
+    /// `total_fees_collected` matches [`FeeContract::get_total_collected`].
+    pub fn get_contract_metrics(env: Env) -> FeeContractMetrics {
+        let total_fees_collected = Self::get_total_collected(env.clone());
+        let default_fee_rate_bps = env
+            .storage()
+            .instance()
+            .get::<DataKey, FeeConfig>(&DataKey::FeeConfig)
+            .map(|c| c.default_fee_rate)
+            .unwrap_or(0);
+        FeeContractMetrics {
+            total_fees_collected,
+            default_fee_rate_bps,
+            ledger_timestamp: env.ledger().timestamp(),
+            ledger_sequence: env.ledger().sequence(),
+        }
     }
 
     /// Get user fees accrued.

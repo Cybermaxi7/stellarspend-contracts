@@ -122,5 +122,4 @@ fn test_unauthorized_add() {
 
     let result = client.try_add_to_blacklist(&unauthorized, &asset);
     assert_eq!(result, Err(Ok(AssetControlError::Unauthorized)));
-}</content>
-<parameter name="filePath">c:\Users\googl\Desktop\Drip wave 2\stellarspend-contracts\tests\asset_control_tests.rs
+}

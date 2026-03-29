@@ -19,6 +19,7 @@ pub enum DataKey {
     Token,
     Treasury,
     FeeBps,
+	MinFee,
     IsLocked,
     CurrentCycle,
     EscrowBalance,
@@ -74,6 +75,14 @@ pub fn read_fee_bps(env: &Env) -> u32 {
         .instance()
         .get(&DataKey::FeeBps)
         .expect("Contract not initialized")
+}
+
+pub fn write_min_fee(env: &Env, min_fee: i128) {
+	env.storage().instance().set(&DataKey::MinFee, &min_fee);
+}
+
+pub fn read_min_fee(env: &Env) -> i128 {
+	env.storage().instance().get(&DataKey::MinFee).unwrap_or(0)
 }
 
 pub fn write_locked(env: &Env, is_locked: bool) {

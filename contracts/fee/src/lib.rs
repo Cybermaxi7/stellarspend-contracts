@@ -10,9 +10,9 @@ use crate::escrow::{
 };
 use crate::storage::{
     has_admin, read_admin, read_current_cycle, read_escrow_balance, read_fee_bps, read_locked,
-    read_pending_fees, read_token, read_total_batch_calls, read_total_collected,
+		read_min_fee, read_pending_fees, read_token, read_total_batch_calls, read_total_collected,
     read_total_released, read_treasury, write_admin, write_current_cycle, write_fee_bps,
-    write_locked, write_token, write_treasury,
+	write_locked, write_min_fee, write_token, write_treasury,
 };
 pub use crate::storage::{BatchFeeResult, DataKey, MAX_BATCH_SIZE, MAX_FEE_BPS};
 
@@ -90,6 +90,11 @@ impl FeeEvents {
         env.events()
             .publish(topics, (symbol_short!("treasury"), treasury.clone()));
     }
+
+	pub fn min_fee_updated(env: &Env, min_fee: i128) {
+		let topics = (symbol_short!("fee"), symbol_short!("config"));
+		env.events().publish(topics, (symbol_short!("min_fee"), min_fee));
+	}
 }
 
 #[contract]
@@ -211,6 +216,19 @@ impl FeeContract {
         FeeEvents::treasury_updated(&env, &treasury);
     }
 
+	pub fn set_min_fee(env: Env, admin: Address, min_fee: i128) {
+		admin.require_auth();
+		Self::require_admin(&env, &admin);
+		Self::require_unlocked(&env);
+
+		if min_fee < 0 {
+			panic_with_error!(&env, FeeContractError::InvalidConfig);
+		}
+
+		write_min_fee(&env, min_fee);
+		FeeEvents::min_fee_updated(&env, min_fee);
+	}
+
     pub fn get_admin(env: Env) -> Address {
         read_admin(&env)
     }
@@ -226,6 +244,10 @@ impl FeeContract {
     pub fn get_fee_bps(env: Env) -> u32 {
         read_fee_bps(&env)
     }
+
+	pub fn get_min_fee(env: Env) -> i128 {
+		read_min_fee(&env)
+	}
 
     pub fn is_locked(env: Env) -> bool {
         read_locked(&env)
@@ -254,6 +276,38 @@ impl FeeContract {
     pub fn get_total_batch_calls(env: Env) -> u64 {
         read_total_batch_calls(&env)
     }
+
+	/// Preview the total fees for a batch of operations without mutating state.
+	///
+	/// Validations mirror `collect_fee_batch`:
+	/// - Batch must be non-empty and not exceed `MAX_BATCH_SIZE`
+	/// - Each item must be positive and meet the configured `min_fee`
+	///
+	/// Returns the sum of all amounts if valid.
+	pub fn preview_batch_fee(env: Env, _user: Address, amounts: Vec<i128>) -> i128 {
+		let batch_size = amounts.len();
+		if batch_size == 0 {
+			panic_with_error!(&env, FeeContractError::EmptyBatch);
+		}
+		if batch_size > MAX_BATCH_SIZE {
+			panic_with_error!(&env, FeeContractError::BatchTooLarge);
+		}
+
+		let min_fee = read_min_fee(&env);
+		let mut total: i128 = 0;
+		for amount in amounts.iter() {
+			if amount <= 0 {
+				panic_with_error!(&env, FeeContractError::InvalidAmount);
+			}
+			if amount < min_fee {
+				panic_with_error!(&env, FeeContractError::InvalidAmount);
+			}
+			total = total
+				.checked_add(amount)
+				.unwrap_or_else(|| panic_with_error!(&env, FeeContractError::Overflow));
+		}
+		total
+	}
 
     fn require_admin(env: &Env, caller: &Address) {
         if !has_admin(env) {

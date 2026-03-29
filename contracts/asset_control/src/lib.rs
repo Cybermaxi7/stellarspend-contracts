@@ -109,5 +109,4 @@ impl AssetControlContract {
             panic_with_error!(env, AssetControlError::Unauthorized);
         }
     }
-}</content>
-<parameter name="filePath">c:\Users\googl\Desktop\Drip wave 2\stellarspend-contracts\contracts\asset_control\src\lib.rs
+}

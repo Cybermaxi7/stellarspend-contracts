@@ -190,10 +190,10 @@ pub struct PriorityFeeConfig {
 impl Default for PriorityFeeConfig {
     fn default() -> Self {
         Self {
-            low_multiplier_bps: 8000,      // 0.8x - 20% discount
-            medium_multiplier_bps: 10000,  // 1.0x - base rate
-            high_multiplier_bps: 15000,    // 1.5x - 50% premium
-            urgent_multiplier_bps: 20000,  // 2.0x - 100% premium
+            low_multiplier_bps: 8000,     // 0.8x - 20% discount
+            medium_multiplier_bps: 10000, // 1.0x - base rate
+            high_multiplier_bps: 15000,   // 1.5x - 50% premium
+            urgent_multiplier_bps: 20000, // 2.0x - 100% premium
         }
     }
 }
@@ -342,7 +342,12 @@ impl FeeEvents {
         let topics = (symbol_short!("fee"), symbol_short!("refunded"));
         env.events().publish(
             topics,
-            (user.clone(), refund_amount, reason.clone(), env.ledger().timestamp()),
+            (
+                user.clone(),
+                refund_amount,
+                reason.clone(),
+                env.ledger().timestamp(),
+            ),
         );
     }
 
@@ -409,9 +414,13 @@ impl FeeEvents {
                 priority.to_u32(),
                 env.ledger().timestamp(),
             ),
+        );
+    }
+
     pub fn fee_escrowed(env: &Env, user: &Address, amount: i128) {
         let topics = (symbol_short!("fee"), symbol_short!("escrowed"));
-        env.events().publish(topics, (user.clone(), amount, env.ledger().timestamp()));
+        env.events()
+            .publish(topics, (user.clone(), amount, env.ledger().timestamp()));
     }
 
     pub fn fee_delegate_updated(env: &Env, user: &Address, delegate: &Address) {
@@ -422,17 +431,28 @@ impl FeeEvents {
         );
     }
 
-    pub fn treasury_configured(env: &Env, admin: &Address, treasury: &Address, percentage_bps: u32) {
+    pub fn treasury_configured(
+        env: &Env,
+        admin: &Address,
+        treasury: &Address,
+        percentage_bps: u32,
+    ) {
         let topics = (symbol_short!("fee"), symbol_short!("treasury"));
         env.events().publish(
             topics,
-            (admin.clone(), treasury.clone(), percentage_bps, env.ledger().timestamp()),
+            (
+                admin.clone(),
+                treasury.clone(),
+                percentage_bps,
+                env.ledger().timestamp(),
+            ),
         );
     }
 
     pub fn fees_routed_to_treasury(env: &Env, amount: i128, treasury: &Address) {
-        let topics = (symbol_short!("fee"), symbol_short!("to_treasury"));
-        env.events().publish(topics, (amount, treasury.clone(), env.ledger().timestamp()));
+        let topics = (symbol_short!("fee"), symbol_short!("to_treas"));
+        env.events()
+            .publish(topics, (amount, treasury.clone(), env.ledger().timestamp()));
     }
 
     pub fn rounding_mode_updated(env: &Env, admin: &Address, mode: RoundingMode) {
@@ -459,11 +479,21 @@ impl FeeEvents {
         );
     }
 
-    pub fn snapshot_created(env: &Env, period_start: u64, total_collected: i128, treasury_collected: i128) {
+    pub fn snapshot_created(
+        env: &Env,
+        period_start: u64,
+        total_collected: i128,
+        treasury_collected: i128,
+    ) {
         let topics = (symbol_short!("fee"), symbol_short!("snapshot"));
         env.events().publish(
             topics,
-            (period_start, total_collected, treasury_collected, env.ledger().timestamp()),
+            (
+                period_start,
+                total_collected,
+                treasury_collected,
+                env.ledger().timestamp(),
+            ),
         );
     }
 }
@@ -502,7 +532,7 @@ impl FeesContract {
     }
 
     /// Get the current rounding mode (defaults to Round)
-    fn get_rounding_mode(env: &Env) -> RoundingMode {
+    fn load_rounding_mode(env: &Env) -> RoundingMode {
         env.storage()
             .instance()
             .get(&DataKey::RoundingMode)
@@ -548,7 +578,7 @@ impl FeesContract {
     }
 
     /// Get cumulative fees for a category
-    fn get_category_fees(env: &Env, category: FeeCategory) -> i128 {
+    fn load_category_fees(env: &Env, category: FeeCategory) -> i128 {
         env.storage()
             .instance()
             .get(&DataKey::CategoryFees(category))
@@ -557,7 +587,7 @@ impl FeesContract {
 
     /// Update cumulative fees for a category
     fn update_category_fees(env: &Env, category: FeeCategory, amount: i128) {
-        let current = Self::get_category_fees(env, category);
+        let current = Self::load_category_fees(env, category);
         let updated = current
             .checked_add(amount)
             .unwrap_or_else(|| panic_with_error!(env, FeeError::Overflow));
@@ -647,15 +677,15 @@ impl FeesContract {
             panic_with_error!(&env, FeeError::InvalidAmount);
         }
         let pct: u32 = Self::get_percentage(env.clone());
-        
+
         // Get rounding mode
-        let rounding_mode = Self::get_rounding_mode(&env);
-        
+        let rounding_mode = Self::load_rounding_mode(&env);
+
         // [SEC-FEES-05] Checked arithmetic throughout.
         let raw_fee = amount
             .checked_mul(pct as i128)
             .unwrap_or_else(|| panic_with_error!(&env, FeeError::Overflow));
-            
+
         // Apply rounding mode
         let fee = match rounding_mode {
             RoundingMode::Floor => raw_fee / 10_000,
@@ -674,11 +704,7 @@ impl FeesContract {
         };
 
         // [SEC-FEES-18] Apply min/max fee bounds.
-        let min_fee: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::MinFee)
-            .unwrap_or(0);
+        let min_fee: i128 = env.storage().instance().get(&DataKey::MinFee).unwrap_or(0);
         let max_fee: i128 = env
             .storage()
             .instance()
@@ -730,7 +756,7 @@ impl FeesContract {
         let adjusted_pct = (base_pct as u64 * multiplier_bps as u64 / 10_000) as u32;
 
         // Get rounding mode
-        let rounding_mode = Self::get_rounding_mode(&env);
+        let rounding_mode = Self::load_rounding_mode(&env);
 
         // [SEC-FEES-05] Checked arithmetic throughout.
         let raw_fee = amount
@@ -755,11 +781,7 @@ impl FeesContract {
         };
 
         // [SEC-FEES-18] Apply min/max fee bounds.
-        let min_fee: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::MinFee)
-            .unwrap_or(0);
+        let min_fee: i128 = env.storage().instance().get(&DataKey::MinFee).unwrap_or(0);
         let max_fee: i128 = env
             .storage()
             .instance()
@@ -805,14 +827,18 @@ impl FeesContract {
             .unwrap_or_else(|| panic_with_error!(&env, FeeError::Overflow));
 
         // [SEC-FEES-21] Delegation logic: use the configured delegate if it exists.
-        let actual_payer = if let Some(delegate) = env.storage().instance().get(&DataKey::FeeDelegate(payer.clone())) {
+        let actual_payer = if let Some(delegate) = env
+            .storage()
+            .instance()
+            .get(&DataKey::FeeDelegate(payer.clone()))
+        {
             delegate
         } else {
             payer.clone()
         };
 
         if actual_payer != payer {
-             actual_payer.require_auth();
+            actual_payer.require_auth();
         }
 
         // Calculate treasury portion and remaining
@@ -980,13 +1006,19 @@ impl FeesContract {
         payer.require_auth();
         Self::require_initialized(&env);
 
-        let fee = Self::calculate_fee(&env, amount);
+        let fee = Self::calculate_fee(env.clone(), amount);
         let net = amount.checked_sub(fee).expect("Overflow");
 
-        let mut escrowed: i128 = env.storage().instance().get(&DataKey::EscrowedFees(payer.clone())).unwrap_or(0);
+        let mut escrowed: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::EscrowedFees(payer.clone()))
+            .unwrap_or(0);
         escrowed = escrowed.checked_add(fee).expect("Overflow");
 
-        env.storage().instance().set(&DataKey::EscrowedFees(payer.clone()), &escrowed);
+        env.storage()
+            .instance()
+            .set(&DataKey::EscrowedFees(payer.clone()), &escrowed);
         FeeEvents::fee_escrowed(&env, &payer, fee);
 
         (net, fee)
@@ -997,24 +1029,37 @@ impl FeesContract {
         admin.require_auth();
         Self::require_admin(&env, &admin);
 
-        let escrowed: i128 = env.storage().instance().get(&DataKey::EscrowedFees(user.clone()))
+        let escrowed: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::EscrowedFees(user.clone()))
             .unwrap_or_else(|| panic_with_error!(&env, FeeError::NoEscrowedFees));
 
         if escrowed == 0 {
             panic_with_error!(&env, FeeError::NoEscrowedFees);
         }
 
-        let mut total: i128 = env.storage().instance().get(&DataKey::TotalFeesCollected).unwrap_or(0);
+        let mut total: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalFeesCollected)
+            .unwrap_or(0);
         total = total.checked_add(escrowed).expect("Overflow");
 
-        env.storage().instance().set(&DataKey::TotalFeesCollected, &total);
-        env.storage().instance().remove(&DataKey::EscrowedFees(user));
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalFeesCollected, &total);
+        env.storage()
+            .instance()
+            .remove(&DataKey::EscrowedFees(user));
     }
 
     /// [ISSUE-203] Set a delegate for fee payments.
     pub fn set_fee_delegate(env: Env, user: Address, delegate: Address) {
         user.require_auth();
-        env.storage().instance().set(&DataKey::FeeDelegate(user.clone()), &delegate);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeDelegate(user.clone()), &delegate);
         FeeEvents::fee_delegate_updated(&env, &user, &delegate);
     }
 
@@ -1031,7 +1076,12 @@ impl FeesContract {
     /// # Security
     /// - Admin authentication required
     /// - Treasury percentage must be 0-10000
-    pub fn set_treasury(env: Env, caller: Address, treasury: Address, treasury_percentage_bps: u32) {
+    pub fn set_treasury(
+        env: Env,
+        caller: Address,
+        treasury: Address,
+        treasury_percentage_bps: u32,
+    ) {
         caller.require_auth();
         Self::require_admin(&env, &caller);
 
@@ -1039,8 +1089,12 @@ impl FeesContract {
             panic_with_error!(&env, FeeError::InvalidTreasuryPercentage);
         }
 
-        env.storage().instance().set(&DataKey::TreasuryAddress, &treasury);
-        env.storage().instance().set(&DataKey::TreasuryFeePercentage, &treasury_percentage_bps);
+        env.storage()
+            .instance()
+            .set(&DataKey::TreasuryAddress, &treasury);
+        env.storage()
+            .instance()
+            .set(&DataKey::TreasuryFeePercentage, &treasury_percentage_bps);
         FeeEvents::treasury_configured(&env, &caller, &treasury, treasury_percentage_bps);
     }
 
@@ -1081,7 +1135,7 @@ impl FeesContract {
 
     /// Get the current rounding mode.
     pub fn get_rounding_mode(env: Env) -> RoundingMode {
-        Self::get_rounding_mode(&env)
+        Self::load_rounding_mode(&env)
     }
 
     /// Set fee category for a user for tracking purposes.
@@ -1095,7 +1149,9 @@ impl FeesContract {
     pub fn set_user_fee_category(env: Env, caller: Address, user: Address, category: FeeCategory) {
         caller.require_auth();
         Self::require_admin(&env, &caller);
-        env.storage().instance().set(&DataKey::FeeCategoryMap(user.clone()), &category);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeCategoryMap(user.clone()), &category);
         FeeEvents::fee_category_configured(&env, &user, category);
     }
 
@@ -1106,7 +1162,7 @@ impl FeesContract {
 
     /// Get cumulative fees for a specific category.
     pub fn get_category_fees(env: Env, category: FeeCategory) -> i128 {
-        Self::get_category_fees(&env, category)
+        Self::load_category_fees(&env, category)
     }
 
     /// Create a snapshot of current fee state.
@@ -1403,16 +1459,19 @@ impl FeesContract {
             let mut recipient_fees: i128 = env
                 .storage()
                 .instance()
-                .get(&DataKey::RecipientFeesAccumulated(recipient.address.clone()))
+                .get(&DataKey::RecipientFeesAccumulated(
+                    recipient.address.clone(),
+                ))
                 .unwrap_or(0);
 
             recipient_fees = recipient_fees
                 .checked_add(recipient_share)
                 .unwrap_or_else(|| panic_with_error!(&env, FeeError::Overflow));
 
-            env.storage()
-                .instance()
-                .set(&DataKey::RecipientFeesAccumulated(recipient.address.clone()), &recipient_fees);
+            env.storage().instance().set(
+                &DataKey::RecipientFeesAccumulated(recipient.address.clone()),
+                &recipient_fees,
+            );
 
             total_distributed = total_distributed
                 .checked_add(recipient_share)
@@ -1484,10 +1543,7 @@ impl FeesContract {
     /// # Returns
     /// Minimum fee in stroops, or 0 if not configured
     pub fn get_min_fee(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::MinFee)
-            .unwrap_or(0)
+        env.storage().instance().get(&DataKey::MinFee).unwrap_or(0)
     }
 
     /// Returns the maximum fee threshold.

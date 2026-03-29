@@ -21,9 +21,12 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@2
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+
+      - name: Install OS packages for soroban-cli (libdbus-sys)
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Install Soroban CLI
         run: cargo install soroban-cli --locked

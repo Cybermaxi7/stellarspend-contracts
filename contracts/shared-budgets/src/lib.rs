@@ -305,45 +305,41 @@ impl SharedBudgetContract {
         // Add member to budget
         budget.members.push_back(new_member.clone());
 
-        // Store updated budget
         env.storage()
-            .instance()
-            .set(&DataKey::TotalBatches, &(total_batches + 1));
-        env.storage().instance().set(
-            &DataKey::TotalAllocationsProcessed,
-            &(total_processed + request_count as u64),
-        );
-        env.storage().instance().set(
-            &DataKey::TotalAllocatedVolume,
-            &total_allocated
-                .checked_add(total_volume)
-                .unwrap_or(total_volume),
-        );
+            .persistent()
+            .set(&DataKey::BudgetMember(budget_id, new_member.clone()), &true);
 
-        // Emit batch completed event
-        SharedBudgetEvents::batch_completed(
-            &env,
-            batch_id,
-            successful_count,
-            failed_count,
-            total_allocated,
-        );
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
+    }
 
-        AllocationBatchResult {
-            total_requests: request_count,
-            successful: successful_count,
-            failed: failed_count,
-            total_allocated,
-            results,
+    /// Add a spending rule to an existing budget.
+    pub fn add_spending_rule(env: Env, caller: Address, budget_id: u64, rule: BudgetSpendingRule) {
+        caller.require_auth();
+
+        let mut budget: Budget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound));
+
+        if caller != budget.creator {
+            Self::require_admin(&env, &caller);
         }
 
-        // Emit event first before modifying the budget
+        validate_percentage(rule.percentage_threshold).unwrap_or_else(|_| {
+            panic_with_error!(&env, SharedBudgetError::InvalidPercentage);
+        });
+
+        if budget.spending_rules.len() as u32 >= MAX_SPENDING_RULES {
+            panic_with_error!(&env, SharedBudgetError::TooManyRules);
+        }
+
         SharedBudgetEvents::spending_rule_added(&env, budget_id, &rule);
 
-        // Add rule to budget
         budget.spending_rules.push_back(rule);
 
-        // Store updated budget
         env.storage()
             .persistent()
             .set(&DataKey::Budget(budget_id), &budget);

@@ -2,7 +2,7 @@ use soroban_sdk::{panic_with_error, token, Address, Env, Vec};
 
 use crate::storage::{
     add_batch_call, add_escrow_balance, add_pending_fees, add_total_collected, add_total_released,
-    clear_pending_fees, read_current_cycle, read_pending_fees, read_token, read_treasury,
+	clear_pending_fees, read_current_cycle, read_min_fee, read_pending_fees, read_token, read_treasury,
     sub_escrow_balance, BatchFeeResult,
 };
 use crate::FeeContractError;
@@ -15,6 +15,10 @@ fn require_positive_amount(env: &Env, amount: i128) {
 
 pub fn collect_to_escrow(env: &Env, payer: &Address, amount: i128) -> i128 {
     require_positive_amount(env, amount);
+	let min_fee = read_min_fee(env);
+	if amount < min_fee {
+		panic_with_error!(env, FeeContractError::InvalidAmount);
+	}
 
     let token_id = read_token(env);
     let token_client = token::Client::new(env, &token_id);
@@ -34,9 +38,13 @@ pub fn collect_to_escrow(env: &Env, payer: &Address, amount: i128) -> i128 {
 
 pub fn collect_batch_to_escrow(env: &Env, payer: &Address, amounts: &Vec<i128>) -> BatchFeeResult {
     let mut total_amount: i128 = 0;
+	let min_fee = read_min_fee(env);
 
     for amount in amounts.iter() {
         require_positive_amount(env, amount);
+		if amount < min_fee {
+			panic_with_error!(env, FeeContractError::InvalidAmount);
+		}
         total_amount = total_amount
             .checked_add(amount)
             .unwrap_or_else(|| panic_with_error!(env, FeeContractError::Overflow));
