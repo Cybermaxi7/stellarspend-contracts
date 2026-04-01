@@ -40,18 +40,15 @@ impl PriorityLevel {
         }
     }
 
-    /// Convert PriorityLevel to u32
-    pub fn to_u32(self) -> u32 {
-        self as u32
-    }
-}
+use soroban_sdk::{contractimpl, contracttype, Address, Env, Vec};
+pub use storage::{FeeLog, FeeLogKind};
 
-// =============================================================================
-// Fee Configuration Structures
-// =============================================================================
+use self::storage::{
+    append_fee_log, get_fee_log as read_fee_log, get_fee_log_count as read_fee_log_count,
+    get_fee_logs as read_fee_logs, FeeLogKind as StorageFeeLogKind,
+};
 
-/// Represents a fee window with time-based rates.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[contracttype]
 pub struct FeeWindow {
     /// Ledger timestamp start
@@ -62,53 +59,7 @@ pub struct FeeWindow {
     pub fee_rate: u32,
 }
 
-/// Configuration for priority-based fee multipliers.
-/// Each priority level has a multiplier applied to the base fee rate.
-#[derive(Clone, Debug)]
-#[contracttype]
-pub struct PriorityFeeConfig {
-    /// Multiplier for Low priority (e.g., 8000 = 0.8x, 80% of base fee)
-    pub low_multiplier_bps: u32,
-    /// Multiplier for Medium priority (e.g., 10000 = 1.0x, 100% of base fee)
-    pub medium_multiplier_bps: u32,
-    /// Multiplier for High priority (e.g., 15000 = 1.5x, 150% of base fee)
-    pub high_multiplier_bps: u32,
-    /// Multiplier for Urgent priority (e.g., 20000 = 2.0x, 200% of base fee)
-    pub urgent_multiplier_bps: u32,
-}
-
-impl Default for PriorityFeeConfig {
-    fn default() -> Self {
-        Self {
-            low_multiplier_bps: 8000,     // 0.8x - 20% discount
-            medium_multiplier_bps: 10000, // 1.0x - base rate
-            high_multiplier_bps: 15000,   // 1.5x - 50% premium
-            urgent_multiplier_bps: 20000, // 2.0x - 100% premium
-        }
-    }
-}
-
-impl PriorityFeeConfig {
-    /// Get the multiplier for a given priority level in basis points
-    pub fn get_multiplier_bps(&self, priority: PriorityLevel) -> u32 {
-        match priority {
-            PriorityLevel::Low => self.low_multiplier_bps,
-            PriorityLevel::Medium => self.medium_multiplier_bps,
-            PriorityLevel::High => self.high_multiplier_bps,
-            PriorityLevel::Urgent => self.urgent_multiplier_bps,
-        }
-    }
-
-    /// Validate that multipliers are in ascending order (higher priority = higher fee)
-    pub fn is_valid(&self) -> bool {
-        self.low_multiplier_bps <= self.medium_multiplier_bps
-            && self.medium_multiplier_bps <= self.high_multiplier_bps
-            && self.high_multiplier_bps <= self.urgent_multiplier_bps
-    }
-}
-
-/// Main fee configuration structure.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[contracttype]
 pub struct FeeConfig {
     /// Default fee rate in basis points
@@ -613,8 +564,7 @@ pub fn calculate_fee_with_priority(
 
     let now = env.ledger().timestamp();
 
-    // Find applicable fee rate from windows
-    let mut base_fee_rate = config.default_fee_rate;
+    let mut fee_rate = config.default_fee_rate;
     for window in config.windows.iter() {
         if now >= window.start && now <= window.end {
             base_fee_rate = window.fee_rate;
@@ -630,59 +580,8 @@ pub fn calculate_fee_with_priority(
     (amount * adjusted_fee_rate as i128) / 10_000
 }
 
-/// Calculate fee for an amount using an asset-specific fee config with priority.
-/// Falls back to the default `FeeConfig` if no asset config is provided.
-pub fn calculate_fee_for_asset(
-    _env: &Env,
-    amount: i128,
-    asset_config: &AssetFeeConfig,
-    priority: &PriorityFeeConfig,
-) -> i128 {
-    if amount <= 0 {
-        return 0;
-    }
-
-    let adjusted_rate =
-        calculate_priority_fee_rate(asset_config.fee_rate, PriorityLevel::default(), priority);
-    let fee = (amount * adjusted_rate as i128) / 10_000;
-
-    let min = asset_config.min_fee;
-    let max = if asset_config.max_fee == 0 {
-        i128::MAX
-    } else {
-        asset_config.max_fee
-    };
-    fee.max(min).min(max)
-}
-
-/// Calculate fee for an amount using an asset-specific fee config and explicit priority.
-pub fn calculate_fee_for_asset_with_priority(
-    _env: &Env,
-    amount: i128,
-    asset_config: &AssetFeeConfig,
-    priority_config: &PriorityFeeConfig,
-    priority: PriorityLevel,
-) -> i128 {
-    if amount <= 0 {
-        return 0;
-    }
-
-    let adjusted_rate =
-        calculate_priority_fee_rate(asset_config.fee_rate, priority, priority_config);
-    let fee = (amount * adjusted_rate as i128) / 10_000;
-
-    let min = asset_config.min_fee;
-    let max = if asset_config.max_fee == 0 {
-        i128::MAX
-    } else {
-        asset_config.max_fee
-    };
-    fee.max(min).min(max)
-}
-
-/// Validate fee windows for correctness.
-pub fn validate_windows(windows: &[FeeWindow]) -> bool {
-    for w in windows {
+pub fn validate_windows(windows: &Vec<FeeWindow>) -> bool {
+    for w in windows.iter() {
         if w.start >= w.end {
             return false;
         }
@@ -690,23 +589,6 @@ pub fn validate_windows(windows: &[FeeWindow]) -> bool {
     true
 }
 
-// =============================================================================
-// Safe Arithmetic Functions
-// =============================================================================
-
-pub fn safe_multiply(amount: i128, rate: u32) -> Option<i128> {
-    amount.checked_mul(rate as i128)
-}
-
-pub fn safe_divide(value: i128, divisor: i128) -> Option<i128> {
-    value.checked_div(divisor)
-}
-
-// =============================================================================
-// Fee Contract
-// =============================================================================
-
-#[contract]
 pub struct FeeContract;
 
 #[contractimpl]
@@ -1139,90 +1021,25 @@ impl FeeContract {
             &DataKey::UserAssetFeesAccrued(payer.clone(), asset.clone()),
             &user_asset_fees,
         );
-
-        FeeEvents::asset_fee_deducted(&env, &payer, &asset, amount, fee, priority);
-        (net, fee)
+        fee
     }
 
-    /// Get total fees collected for a specific asset.
-    pub fn get_asset_fees_collected(env: Env, asset: Address) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::AssetFeesCollected(asset))
-            .unwrap_or(0)
+    pub fn record_fee_refund(env: Env, payer: Address, amount: i128, refunded_fee: i128) -> FeeLog {
+        append_fee_log(
+            &env,
+            Some(payer),
+            amount,
+            refunded_fee,
+            StorageFeeLogKind::Refund,
+        )
     }
 
-    /// Get fees accrued by a specific user for a specific asset.
-    pub fn get_user_asset_fees_accrued(env: Env, user: Address, asset: Address) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::UserAssetFeesAccrued(user, asset))
-            .unwrap_or(0)
+    pub fn get_fee_log(env: Env, id: u64) -> Option<FeeLog> {
+        read_fee_log(&env, id)
     }
 
-    // =========================================================================
-    // Batch fee methods
-    // =========================================================================
-
-    /// Calculate fees for a batch of transactions without modifying state.
-    ///
-    /// Returns a `BatchFeeResult` with per-transaction results and the aggregate
-    /// total. This is a read-only simulation; no balances are updated.
-    pub fn calculate_batch_fees(env: Env, transactions: Vec<FeeTransaction>) -> BatchFeeResult {
-        Self::require_initialized(&env);
-
-        let priority_config: PriorityFeeConfig = env
-            .storage()
-            .instance()
-            .get(&DataKey::PriorityFeeConfig)
-            .unwrap_or_else(PriorityFeeConfig::default);
-
-        let fee_config: FeeConfig = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeConfig)
-            .unwrap_or_else(|| panic_with_error!(&env, FeeError::NotInitialized));
-
-        let mut results: Vec<FeeTransactionResult> = Vec::new(&env);
-        let mut total_fees: i128 = 0;
-
-        for tx in transactions.iter() {
-            if tx.amount <= 0 {
-                panic_with_error!(&env, FeeError::InvalidAmount);
-            }
-
-            let fee = if let Some(asset_cfg) = env
-                .storage()
-                .instance()
-                .get::<DataKey, AssetFeeConfig>(&DataKey::AssetFeeConfig(tx.asset.clone()))
-            {
-                calculate_fee_for_asset_with_priority(
-                    &env,
-                    tx.amount,
-                    &asset_cfg,
-                    &priority_config,
-                    tx.priority,
-                )
-            } else {
-                calculate_fee_with_priority(&env, tx.amount, &fee_config, tx.priority)
-            };
-
-            let net_amount = tx
-                .amount
-                .checked_sub(fee)
-                .unwrap_or_else(|| panic_with_error!(&env, FeeError::Overflow));
-
-            total_fees = total_fees
-                .checked_add(fee)
-                .unwrap_or_else(|| panic_with_error!(&env, FeeError::Overflow));
-
-            results.push_back(FeeTransactionResult { net_amount, fee });
-        }
-
-        BatchFeeResult {
-            results,
-            total_fees,
-        }
+    pub fn get_fee_log_count(env: Env) -> u64 {
+        read_fee_log_count(&env)
     }
 
     /// Deduct fees for a batch of transactions atomically.
@@ -1367,10 +1184,6 @@ impl FeeContract {
         }
     }
 }
-
-// =============================================================================
-// Internal Helpers
-// =============================================================================
 
 impl FeeContract {
     fn require_initialized(env: &Env) -> Address {

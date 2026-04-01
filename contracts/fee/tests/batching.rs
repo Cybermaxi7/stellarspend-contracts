@@ -6,7 +6,7 @@ use support::{amounts, setup};
 fn batch_collection_aggregates_fee_inputs_with_one_state_update() {
     let ctx = setup();
     let batch = amounts(&ctx.env, &[10, 20, 30, 40]);
-// handle hash
+
     let result = ctx.client.collect_fee_batch(&ctx.payer, &batch);
     assert_eq!(result.batch_size, 4);
     assert_eq!(result.total_amount, 100);

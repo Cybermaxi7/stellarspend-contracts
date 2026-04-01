@@ -468,6 +468,6 @@ fn test_multiple_simultaneous_batch_distributions() {
 
     // Verify each recipient received tokens
     for recipient in recipients.iter() {
-        assert_eq!(token_client.balance(recipient), amount * 3);
+        assert_eq!(token_client.balance(&recipient), amount * 3);
     }
 }

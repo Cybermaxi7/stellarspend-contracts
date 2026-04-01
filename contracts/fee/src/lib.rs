@@ -2,25 +2,26 @@
 
 mod decay;
 mod escrow;
+mod events;
 mod storage;
 mod validation;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Address, Env, Vec};
+#[cfg(test)]
+mod test;
 
-use crate::decay::{calculate_fee_decay, DECAY_RATE, MIN_FEE, MAX_FEE};
+use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Address, Env, Symbol, Vec};
+
+use crate::decay::calculate_fee_decay;
 use crate::escrow::{
     collect_batch_to_escrow, collect_to_escrow, release_cycle_fees, rollover_cycle_fees,
 };
+use crate::events::TierEvents;
 use crate::storage::{
-    has_admin, read_admin, read_current_cycle, read_escrow_balance, read_fee_bps, read_locked,
-    read_min_fee, read_pending_fees, read_token, read_total_batch_calls, read_total_collected,
-    read_total_released, read_treasury, write_admin, write_current_cycle, write_fee_bps,
-    write_locked, write_min_fee, write_token, write_treasury,
     has_admin, read_admin, read_current_cycle, read_escrow_balance, read_fee_bps, read_last_active,
-		read_locked, read_min_fee, read_pending_fees, read_token, read_total_batch_calls,
-		read_total_collected, read_total_released, read_treasury, write_admin,
-		write_current_cycle, write_fee_bps, write_last_active, write_locked, write_min_fee,
-		write_token, write_treasury,
+    read_locked, read_min_fee, read_pending_fees, read_token, read_total_batch_calls,
+    read_total_collected, read_total_released, read_treasury, write_admin, write_current_cycle,
+    write_fee_bps, write_last_active, write_locked, write_min_fee, write_token, write_treasury,
+    is_valid_tier, read_user_tier, remove_user_tier, write_user_tier,
 };
 pub use crate::storage::{BatchFeeResult, DataKey, MAX_BATCH_SIZE, MAX_FEE_BPS};
 use crate::validation::{validate_fee_bps_or_panic, validate_min_fee_or_panic};
@@ -39,6 +40,7 @@ pub enum FeeContractError {
     InvalidCycle = 9,
     InvalidConfig = 10,
     NoPendingFees = 11,
+    InvalidTier = 12,
 }
 
 impl From<FeeContractError> for soroban_sdk::Error {
@@ -361,6 +363,34 @@ impl FeeContract {
         validate_fee_bps_or_panic(&env, fee_bps);
         validate_min_fee_or_panic(&env, min_fee);
         true
+    }
+
+    /// Assigns a fee tier to a user. Admin-only.
+    /// Valid tiers: `bronze`, `silver`, `gold`, `platinum`.
+    pub fn set_user_tier(env: Env, admin: Address, user: Address, tier: Symbol) {
+        admin.require_auth();
+        Self::require_admin(&env, &admin);
+
+        if !is_valid_tier(&env, &tier) {
+            panic_with_error!(&env, FeeContractError::InvalidTier);
+        }
+
+        write_user_tier(&env, &user, &tier);
+        TierEvents::tier_set(&env, &admin, &user, &tier);
+    }
+
+    /// Removes the fee tier from a user, resetting them to default. Admin-only.
+    pub fn remove_user_tier(env: Env, admin: Address, user: Address) {
+        admin.require_auth();
+        Self::require_admin(&env, &admin);
+
+        remove_user_tier(&env, &user);
+        TierEvents::tier_removed(&env, &admin, &user);
+    }
+
+    /// Returns the tier assigned to a user, or `None` if no tier is set.
+    pub fn get_user_tier(env: Env, user: Address) -> Option<Symbol> {
+        read_user_tier(&env, &user)
     }
 
     fn require_admin(env: &Env, caller: &Address) {

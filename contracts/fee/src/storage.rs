@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Env};
+use soroban_sdk::{contracttype, Address, Env, Symbol};
 
 pub const MAX_BATCH_SIZE: u32 = 100;
 pub const MAX_FEE_BPS: u32 = 10_000;
@@ -28,6 +28,7 @@ pub enum DataKey {
     TotalBatchCalls,
     PendingFees(u64),
     UserActivity(Address),
+    UserTier(Address),
 }
 
 pub fn has_admin(env: &Env) -> bool {
@@ -210,4 +211,41 @@ pub fn write_last_active(env: &Env, user: &Address, timestamp: u64) {
     env.storage()
         .persistent()
         .set(&DataKey::UserActivity(user.clone()), &timestamp);
+}
+
+// ---------------------------------------------------------------------------
+// User tier storage helpers
+// ---------------------------------------------------------------------------
+
+/// Predefined valid tier symbols.
+pub const TIER_BRONZE: &str = "bronze";
+pub const TIER_SILVER: &str = "silver";
+pub const TIER_GOLD: &str = "gold";
+pub const TIER_PLATINUM: &str = "platinum";
+
+/// Returns true if `tier` is one of the predefined valid tiers.
+pub fn is_valid_tier(env: &Env, tier: &Symbol) -> bool {
+    let bronze = Symbol::new(env, TIER_BRONZE);
+    let silver = Symbol::new(env, TIER_SILVER);
+    let gold = Symbol::new(env, TIER_GOLD);
+    let platinum = Symbol::new(env, TIER_PLATINUM);
+    *tier == bronze || *tier == silver || *tier == gold || *tier == platinum
+}
+
+pub fn write_user_tier(env: &Env, user: &Address, tier: &Symbol) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::UserTier(user.clone()), tier);
+}
+
+pub fn read_user_tier(env: &Env, user: &Address) -> Option<Symbol> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::UserTier(user.clone()))
+}
+
+pub fn remove_user_tier(env: &Env, user: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::UserTier(user.clone()));
 }
