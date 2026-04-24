@@ -178,3 +178,25 @@ impl BudgetContract {
         }
     }
 }
+
+use soroban_sdk::{contractimpl, Env, Address};
+
+pub struct BudgetContract;
+
+#[contractimpl]
+impl BudgetContract {
+    /// Set a budget limit for a given user
+    pub fn set_budget(env: Env, user: Address, amount: i128) {
+        env.storage().set(&user, &amount);
+    }
+
+    /// Get the budget limit for a given user
+    pub fn get_budget(env: Env, user: Address) -> i128 {
+        env.storage().get(&user).unwrap_or(0)
+    }
+
+    /// Reset the budget limit for a given user back to zero
+    pub fn reset_budget(env: Env, user: Address) {
+        env.storage().set(&user, &0i128);
+    }
+}
