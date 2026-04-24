@@ -147,3 +147,43 @@ fn test_reset_fee_config_unauthorized_panics() {
     let non_admin = Address::generate(&env);
     client.reset_fee_config(&non_admin);
 }
+
+#[test]
+fn test_validate_fee_bps_valid() {
+    use crate::validation::validate_fee_bps;
+    
+    // Valid values
+    assert!(validate_fee_bps(0).is_ok());
+    assert!(validate_fee_bps(500).is_ok());
+    assert!(validate_fee_bps(10000).is_ok());
+}
+
+#[test]
+fn test_validate_fee_bps_invalid() {
+    use crate::validation::validate_fee_bps;
+    use crate::FeeContractError;
+    
+    // Invalid value (> 10000)
+    assert_eq!(validate_fee_bps(10001), Err(FeeContractError::InvalidConfig));
+    assert_eq!(validate_fee_bps(99999), Err(FeeContractError::InvalidConfig));
+}
+
+#[test]
+fn test_validate_min_fee_valid() {
+    use crate::validation::validate_min_fee;
+    
+    // Valid values
+    assert!(validate_min_fee(0).is_ok());
+    assert!(validate_min_fee(100).is_ok());
+    assert!(validate_min_fee(1000000).is_ok());
+}
+
+#[test]
+fn test_validate_min_fee_invalid() {
+    use crate::validation::validate_min_fee;
+    use crate::FeeContractError;
+    
+    // Invalid value (< 0)
+    assert_eq!(validate_min_fee(-1), Err(FeeContractError::InvalidConfig));
+    assert_eq!(validate_min_fee(-1000), Err(FeeContractError::InvalidConfig));
+}
