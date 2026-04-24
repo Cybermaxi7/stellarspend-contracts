@@ -1,5 +1,6 @@
 mod support;
 
+use soroban_sdk::Address;
 use support::setup;
 
 #[test]
@@ -118,7 +119,7 @@ fn reconciliation_balanced_after_multiple_cycles() {
 #[test]
 fn reconcile_fees_requires_admin() {
     let ctx = setup();
-    let non_admin = soroban_sdk::testutils::Address::generate(&ctx.env);
+    let non_admin = <Address as soroban_sdk::testutils::Address>::generate(&ctx.env);
 
     // get_reconciliation_status has no admin check
     let result = ctx.client.get_reconciliation_status();
@@ -129,15 +130,15 @@ fn reconcile_fees_requires_admin() {
     let env = soroban_sdk::Env::default();
     env.mock_all_auths();
 
-    let issuer = soroban_sdk::testutils::Address::generate(&env);
+    let issuer = <Address as soroban_sdk::testutils::Address>::generate(&env);
     let stellar_asset = env.register_stellar_asset_contract_v2(issuer);
     let token_id = stellar_asset.address();
 
     let contract_id = env.register(fee::FeeContract, ());
     let client = fee::FeeContractClient::new(&env, &contract_id);
-    let admin = soroban_sdk::testutils::Address::generate(&env);
-    let treasury = soroban_sdk::testutils::Address::generate(&env);
-    let fake_admin = soroban_sdk::testutils::Address::generate(&env);
+    let admin = <Address as soroban_sdk::testutils::Address>::generate(&env);
+    let treasury = <Address as soroban_sdk::testutils::Address>::generate(&env);
+    let fake_admin = <Address as soroban_sdk::testutils::Address>::generate(&env);
 
     client.initialize(&admin, &token_id, &treasury, &250u32, &1u64);
 

@@ -6,6 +6,7 @@ mod reconciliation;
 mod events;
 mod storage;
 mod validation;
+mod utils;
 
 #[cfg(test)]
 mod test;
@@ -25,6 +26,7 @@ use crate::storage::{
     read_total_collected, read_total_released, read_treasury, write_admin, write_current_cycle,
     write_fee_bps, write_last_active, write_locked, write_min_fee, write_token, write_treasury,
     is_valid_tier, read_user_tier, remove_user_tier, write_user_tier,
+    DEFAULT_FEE_BPS, DEFAULT_MIN_FEE,
 };
 pub use crate::storage::{BatchFeeResult, DataKey, MAX_BATCH_SIZE, MAX_FEE_BPS};
 use crate::validation::{validate_fee_bps_or_panic, validate_min_fee_or_panic};
@@ -282,6 +284,22 @@ impl FeeContract {
         FeeEvents::min_fee_updated(&env, min_fee);
     }
 
+    /// Resets fee configuration to default values. Admin-only.
+    /// Restores:
+    /// - fee_bps to DEFAULT_FEE_BPS (500 = 5%)
+    /// - min_fee to DEFAULT_MIN_FEE (0)
+    /// Emits a fee_config_reset event.
+    pub fn reset_fee_config(env: Env, admin: Address) {
+        admin.require_auth();
+        Self::require_admin(&env, &admin);
+        Self::require_unlocked(&env);
+
+        write_fee_bps(&env, DEFAULT_FEE_BPS);
+        write_min_fee(&env, DEFAULT_MIN_FEE);
+        
+        TierEvents::fee_config_reset(&env, &admin);
+    }
+
     pub fn get_admin(env: Env) -> Address {
         read_admin(&env)
     }
@@ -311,6 +329,12 @@ impl FeeContract {
     }
 
     pub fn get_escrow_balance(env: Env) -> i128 {
+        read_escrow_balance(&env)
+    }
+
+    /// Returns the current total fee balance stored in the contract.
+    /// This is an alias for get_escrow_balance() for clarity.
+    pub fn get_fee_balance(env: Env) -> i128 {
         read_escrow_balance(&env)
     }
 
@@ -407,6 +431,7 @@ impl FeeContract {
     /// status without requiring admin privileges or emitting events.
     pub fn get_reconciliation_status(env: Env) -> ReconciliationResult {
         reconcile(&env)
+    }
     /// Assigns a fee tier to a user. Admin-only.
     /// Valid tiers: `bronze`, `silver`, `gold`, `platinum`.
     pub fn set_user_tier(env: Env, admin: Address, user: Address, tier: Symbol) {

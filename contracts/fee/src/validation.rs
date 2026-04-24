@@ -33,3 +33,25 @@ pub fn validate_discount_vs_base_or_panic(env: &Env, base_bps: u32, discount_bps
     }
     true
 }
+
+/// Validate fee basis points without panicking.
+/// Returns Ok(()) if valid, or Err(FeeContractError::InvalidConfig) if invalid.
+/// This is a safer alternative to validate_fee_bps_or_panic that allows
+/// callers to handle errors gracefully.
+pub fn validate_fee_bps(fee_bps: u32) -> Result<(), FeeContractError> {
+    if fee_bps > MAX_FEE_BPS {
+        Err(FeeContractError::InvalidConfig)
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate minimum fee without panicking.
+/// Returns Ok(()) if valid, or Err(FeeContractError::InvalidConfig) if invalid.
+pub fn validate_min_fee(min_fee: i128) -> Result<(), FeeContractError> {
+    if min_fee < 0 {
+        Err(FeeContractError::InvalidConfig)
+    } else {
+        Ok(())
+    }
+}
