@@ -1,6 +1,7 @@
 use soroban_sdk::Env;
 
 use crate::{storage::MAX_FEE_BPS, FeeContractError};
+use shared::utils::validate_amount as validate_non_negative_amount;
 use soroban_sdk::panic_with_error;
 
 /// Validate fee basis points are within [0, MAX_FEE_BPS].
@@ -16,7 +17,7 @@ pub fn validate_fee_bps_or_panic(env: &Env, fee_bps: u32) -> bool {
 /// Validate minimum fee is non-negative.
 /// Panics with InvalidConfig on failure. Returns true on success.
 pub fn validate_min_fee_or_panic(env: &Env, min_fee: i128) -> bool {
-    if min_fee < 0 {
+    if validate_non_negative_amount(min_fee).is_err() {
         panic_with_error!(env, FeeContractError::InvalidConfig);
     }
     true
@@ -49,7 +50,7 @@ pub fn validate_fee_bps(fee_bps: u32) -> Result<(), FeeContractError> {
 /// Validate minimum fee without panicking.
 /// Returns Ok(()) if valid, or Err(FeeContractError::InvalidConfig) if invalid.
 pub fn validate_min_fee(min_fee: i128) -> Result<(), FeeContractError> {
-    if min_fee < 0 {
+    if validate_non_negative_amount(min_fee).is_err() {
         Err(FeeContractError::InvalidConfig)
     } else {
         Ok(())

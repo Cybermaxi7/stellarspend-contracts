@@ -1,3 +1,4 @@
+use shared::utils::validate_amount as validate_non_negative_amount;
 use soroban_sdk::{panic_with_error, token, Address, Env, Vec};
 
 use crate::storage::{
@@ -8,7 +9,7 @@ use crate::storage::{
 use crate::FeeContractError;
 
 fn require_positive_amount(env: &Env, amount: i128) {
-    if amount <= 0 {
+    if validate_non_negative_amount(amount).is_err() || amount == 0 {
         panic_with_error!(env, FeeContractError::InvalidAmount);
     }
 }

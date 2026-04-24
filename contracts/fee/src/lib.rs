@@ -1,12 +1,14 @@
 #![no_std]
 
+extern crate alloc;
+
 mod decay;
 mod escrow;
-mod reconciliation;
 mod events;
+mod reconciliation;
 mod storage;
-mod validation;
 mod utils;
+mod validation;
 mod auth;
 
 #[cfg(test)]
@@ -18,18 +20,21 @@ use crate::decay::calculate_fee_decay;
 use crate::escrow::{
     collect_batch_to_escrow, collect_to_escrow, release_cycle_fees, rollover_cycle_fees,
 };
+use crate::events::{ConfigEvents, FeeEvents, TierEvents};
 use crate::reconciliation::reconcile;
 pub use crate::reconciliation::ReconciliationResult;
-use crate::events::{FeeEvents, TierEvents};
 use crate::storage::{
     has_admin, is_valid_tier, read_admin, read_current_cycle, read_escrow_balance, read_fee_bps,
     read_last_active, read_locked, read_min_fee, read_pending_fees, read_token,
     read_total_batch_calls, read_total_collected, read_total_released, read_treasury,
     read_user_tier, remove_user_tier, write_admin, write_current_cycle, write_fee_bps,
     write_last_active, write_locked, write_min_fee, write_token, write_treasury, write_user_tier,
+    DEFAULT_FEE_BPS, DEFAULT_MIN_FEE,
 };
 pub use crate::storage::{BatchFeeResult, DataKey, MAX_BATCH_SIZE, MAX_FEE_BPS};
+use crate::utils::format_amount;
 use crate::validation::{validate_fee_bps_or_panic, validate_min_fee_or_panic};
+use shared::utils::validate_amount as validate_non_negative_amount;
 use crate::auth::require_admin;
 use crate::utils::compute_fee;
 
@@ -55,7 +60,6 @@ impl From<FeeContractError> for soroban_sdk::Error {
         soroban_sdk::Error::from_contract_error(value as u32)
     }
 }
-
 
 #[contract]
 pub struct FeeContract;
@@ -97,15 +101,15 @@ impl FeeContract {
 
     pub fn collect_fee(env: Env, payer: Address, amount: i128) -> i128 {
         payer.require_auth();
-        
+
         let last_active = read_last_active(&env, &payer);
         let current_time = env.ledger().timestamp();
         let decayed_amount = calculate_fee_decay(&env, amount, last_active, current_time);
 
         let pending = collect_to_escrow(&env, &payer, decayed_amount);
-        
+
         write_last_active(&env, &payer, current_time);
-        
+
         FeeEvents::fee_collected(&env, &payer, amount);
         FeeEvents::fee_escrowed(&env, &payer, decayed_amount, read_current_cycle(&env));
         pending
@@ -135,7 +139,7 @@ impl FeeContract {
         }
 
         let result = collect_batch_to_escrow(&env, &payer, &decayed_amounts);
-        
+
         write_last_active(&env, &payer, current_time);
 
         FeeEvents::fee_collected(&env, &payer, total_original_amount);
@@ -226,7 +230,7 @@ impl FeeContract {
     /// Restores:
     /// - fee_bps to DEFAULT_FEE_BPS (500 = 5%)
     /// - min_fee to DEFAULT_MIN_FEE (0)
-    /// Emits a fee_config_reset event.
+    /// Emits a reset event with the restored default values.
     pub fn reset_fee_config(env: Env, admin: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin);
@@ -234,8 +238,8 @@ impl FeeContract {
 
         write_fee_bps(&env, DEFAULT_FEE_BPS);
         write_min_fee(&env, DEFAULT_MIN_FEE);
-        
-        TierEvents::fee_config_reset(&env, &admin);
+
+        ConfigEvents::fee_reset(&env, &admin);
     }
 
     pub fn get_admin(env: Env) -> Address {
@@ -292,120 +296,4 @@ impl FeeContract {
         read_total_batch_calls(&env)
     }
 
-    /// Preview the total fees for a batch of operations without mutating state.
-    ///
-    /// This is a view/read method intended for clients to estimate the aggregate fee
-    /// they will be charged when submitting a batch via `collect_fee_batch`. It performs
-    /// identical validations (non-empty, size cap, per-item minimum and positivity) but
-    /// does not transfer tokens or write to storage.
-    ///
-    /// Validations mirror `collect_fee_batch`:
-    /// - Batch must be non-empty and not exceed `MAX_BATCH_SIZE`
-    /// - Each item must be positive and meet the configured `min_fee`
-    ///
-    /// Returns the sum of all amounts if valid.
-    pub fn preview_batch_fee(env: Env, _user: Address, amounts: Vec<i128>) -> i128 {
-        let batch_size = amounts.len();
-        if batch_size == 0 {
-            panic_with_error!(&env, FeeContractError::EmptyBatch);
-        }
-        if batch_size > MAX_BATCH_SIZE {
-            panic_with_error!(&env, FeeContractError::BatchTooLarge);
-        }
-
-        let min_fee = read_min_fee(&env);
-        let mut total: i128 = 0;
-        for amount in amounts.iter() {
-            if amount <= 0 {
-                panic_with_error!(&env, FeeContractError::InvalidAmount);
-            }
-            if amount < min_fee {
-                panic_with_error!(&env, FeeContractError::InvalidAmount);
-            }
-            total = total
-                .checked_add(amount)
-                .unwrap_or_else(|| panic_with_error!(&env, FeeContractError::Overflow));
-        }
-        total
-    }
-
-    /// Validate a configuration tuple. Returns true or panics on invalid inputs.
-    ///
-    /// Current checks:
-    /// - `fee_bps` within [0, MAX_FEE_BPS]
-    /// - `min_fee` >= 0
-    /// Extend this as new fee knobs are added.
-    pub fn validate_config(env: Env, fee_bps: u32, min_fee: i128) -> bool {
-        validate_fee_bps_or_panic(&env, fee_bps);
-        validate_min_fee_or_panic(&env, min_fee);
-        true
-    }
-
-    /// Calculates a fee based on the given amount and basis points (bps).
-    /// Returns the calculated fee or panics on overflow.
-    pub fn calculate_fee_amount(env: Env, amount: i128, bps: u32) -> i128 {
-        compute_fee(amount, bps).unwrap_or_else(|| panic_with_error!(&env, FeeContractError::Overflow))
-    }
-
-    /// Run fee reconciliation: compare the stored escrow balance against the
-    /// calculated balance (total_collected - total_released). Emits a
-    /// reconciliation event and, if a discrepancy is found, a discrepancy event.
-    /// Admin-only.
-    pub fn reconcile_fees(env: Env, _admin: Address) -> ReconciliationResult {
-        require_admin(&env, &_admin);
-
-        let result = reconcile(&env);
-
-        if result.is_reconciled {
-            FeeEvents::fee_reconciled(&env, result.stored_balance, result.calculated_balance);
-        } else {
-            FeeEvents::fee_discrepancy(
-                &env,
-                result.stored_balance,
-                result.calculated_balance,
-                result.discrepancy,
-            );
-        }
-
-        result
-    }
-
-    /// Read-only reconciliation check. Returns the current reconciliation
-    /// status without requiring admin privileges or emitting events.
-    pub fn get_reconciliation_status(env: Env) -> ReconciliationResult {
-        reconcile(&env)
-    }
-
-    /// Assigns a fee tier to a user. Admin-only.
-    /// Valid tiers: `bronze`, `silver`, `gold`, `platinum`.
-    pub fn set_user_tier(env: Env, _admin: Address, user: Address, tier: Symbol) {
-        require_admin(&env, &_admin);
-
-        if !is_valid_tier(&env, &tier) {
-            panic_with_error!(&env, FeeContractError::InvalidTier);
-        }
-
-        write_user_tier(&env, &user, &tier);
-        TierEvents::tier_set(&env, &read_admin(&env), &user, &tier);
-    }
-
-    /// Removes the fee tier from a user, resetting them to default. Admin-only.
-    pub fn remove_user_tier(env: Env, _admin: Address, user: Address) {
-        require_admin(&env, &_admin);
-
-        remove_user_tier(&env, &user);
-        TierEvents::tier_removed(&env, &read_admin(&env), &user);
-    }
-
-    /// Returns the tier assigned to a user, or `None` if no tier is set.
-    pub fn get_user_tier(env: Env, user: Address) -> Option<Symbol> {
-        read_user_tier(&env, &user)
-    }
-
-
-    fn require_unlocked(env: &Env) {
-        if read_locked(env) {
-            panic_with_error!(env, FeeContractError::Locked);
-        }
-    }
-}
+    pub fn preview_batch_fee(env: Env

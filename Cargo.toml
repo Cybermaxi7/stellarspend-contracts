@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
+    "contracts/balance",
     "contracts/stellarspend-contracts",
     "contracts/transaction-analytics",
     "contracts/contract-upgrade/old_contract",
     "contracts/contract-upgrade/new_contract",
+    "contracts/shared",
     "contracts/batch-transfer",
     "contracts/batch-conversion",
     "contracts/batch-rewards",
@@ -52,6 +54,7 @@ repository = "https://github.com/stellarspend/stellarspend-contracts"
 
 [workspace.dependencies]
 soroban-sdk = "22.0.0"
+shared = { path = "contracts/shared" }
 
 [profile.release]
 opt-level = "z"

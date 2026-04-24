@@ -1,10 +1,10 @@
 [package]
-name = "fee"
+name = "balance"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Fee escrow, rollover, batching, and lock contract for StellarSpend"
+description = "Simple balance storage and query contract for StellarSpend"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

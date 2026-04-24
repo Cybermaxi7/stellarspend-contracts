@@ -1,0 +1,11 @@
+[package]
+name = "shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared validation helpers for StellarSpend contracts"
+
+[lib]
+crate-type = ["rlib"]
+doctest = false

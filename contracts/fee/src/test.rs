@@ -1,8 +1,15 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
+use soroban_sdk::{
+    testutils::{Address as _, Events},
+    Address, Env, IntoVal, String, Symbol,
+};
 
-use crate::{FeeContract, FeeContractClient};
+use crate::{
+    events::FeeResetEventData,
+    storage::{DEFAULT_FEE_BPS, DEFAULT_MIN_FEE},
+    FeeContract, FeeContractClient,
+};
 
 fn setup() -> (Env, Address, FeeContractClient<'static>) {
     let env = Env::default();
@@ -16,14 +23,14 @@ fn setup() -> (Env, Address, FeeContractClient<'static>) {
     (env, admin, client)
 }
 
+// --- Tier tests (uncontested) ---
+
 #[test]
 fn test_set_user_tier_valid() {
     let (env, admin, client) = setup();
     let user = Address::generate(&env);
     let tier = Symbol::new(&env, "gold");
-
     client.set_user_tier(&admin, &user, &tier);
-
     let stored = client.get_user_tier(&user).unwrap();
     assert_eq!(stored, tier);
 }
@@ -32,7 +39,6 @@ fn test_set_user_tier_valid() {
 fn test_set_user_tier_all_valid_tiers() {
     let (env, admin, client) = setup();
     let user = Address::generate(&env);
-
     for name in ["bronze", "silver", "gold", "platinum"] {
         let tier = Symbol::new(&env, name);
         client.set_user_tier(&admin, &user, &tier);
@@ -64,10 +70,8 @@ fn test_remove_user_tier() {
     let (env, admin, client) = setup();
     let user = Address::generate(&env);
     let tier = Symbol::new(&env, "platinum");
-
     client.set_user_tier(&admin, &user, &tier);
     assert!(client.get_user_tier(&user).is_some());
-
     client.remove_user_tier(&admin, &user);
     assert!(client.get_user_tier(&user).is_none());
 }
@@ -76,7 +80,6 @@ fn test_remove_user_tier() {
 fn test_remove_user_tier_no_tier_is_noop() {
     let (env, admin, client) = setup();
     let user = Address::generate(&env);
-    // Should not panic even if user has no tier
     client.remove_user_tier(&admin, &user);
     assert!(client.get_user_tier(&user).is_none());
 }
@@ -103,15 +106,15 @@ fn test_get_user_tier_returns_none_when_unset() {
 fn test_tier_can_be_overwritten() {
     let (env, admin, client) = setup();
     let user = Address::generate(&env);
-
     client.set_user_tier(&admin, &user, &Symbol::new(&env, "bronze"));
     client.set_user_tier(&admin, &user, &Symbol::new(&env, "gold"));
-
     assert_eq!(
         client.get_user_tier(&user).unwrap(),
         Symbol::new(&env, "gold")
     );
 }
+
+// --- Init / config tests ---
 
 #[test]
 fn test_init_default() {
@@ -122,9 +125,7 @@ fn test_init_default() {
     let treasury = Address::generate(&env);
     let contract_id = env.register(FeeContract, ());
     let client = FeeContractClient::new(&env, &contract_id);
-    
     client.init(&admin, &token, &treasury);
-    
     assert_eq!(client.get_admin(), admin);
     assert_eq!(client.get_token(), token);
     assert_eq!(client.get_treasury(), treasury);
@@ -132,17 +133,55 @@ fn test_init_default() {
 }
 
 #[test]
+fn test_reset_fee_config_restores_defaults() {
+    let (env, admin, client) = setup();
+    client.set_fee_bps(&admin, &1000u32);
+    client.set_min_fee(&admin, &100i128);
+    assert_eq!(client.get_fee_bps(), 1000);
+    assert_eq!(client.get_min_fee(), 100);
+    client.reset_fee_config(&admin);
+    assert_eq!(client.get_fee_bps(), 500);
+    assert_eq!(client.get_min_fee(), 0);
+}
+
+#[test]
 fn test_calculate_fee_amount() {
     let (_env, _admin, client) = setup();
-    
-    // 1000 * 300 / 10000 = 30
     assert_eq!(client.calculate_fee_amount(&1000, &300), 30);
-    
-    // 500 * 500 / 10000 = 25
     assert_eq!(client.calculate_fee_amount(&500, &500), 25);
-    
-    // 100 * 10000 / 10000 = 100
     assert_eq!(client.calculate_fee_amount(&100, &10000), 100);
+}
+
+#[test]
+fn test_reset_fee_config_emits_event_with_restored_values() {
+    let (env, admin, client) = setup();
+    client.set_fee_bps(&admin, &1000u32);
+    client.set_min_fee(&admin, &75i128);
+    let _ = env.events().all();
+    client.reset_fee_config(&admin);
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+    assert_eq!(
+        topics,
+        soroban_sdk::vec![
+            &env,
+            Symbol::new(&env, "fee").into_val(&env),
+            Symbol::new(&env, "reset").into_val(&env)
+        ]
+    );
+    let payload: FeeResetEventData = data.into_val(&env);
+    assert_eq!(payload.admin, admin);
+    assert_eq!(payload.fee_bps, DEFAULT_FEE_BPS);
+    assert_eq!(payload.min_fee, DEFAULT_MIN_FEE);
+    assert_eq!(payload.formatted_min_fee, String::from_str(&env, "0"));
+}
+
+#[test]
+#[should_panic]
+fn test_reset_fee_config_unauthorized_panics() {
+    let (env, _admin, client) = setup();
+    let non_admin = Address::generate(&env);
+    client.reset_fee_config(&non_admin);
 }
 
 #[test]
@@ -152,22 +191,36 @@ fn test_calculate_fee_amount_overflow_panics() {
     client.calculate_fee_amount(&i128::MAX, &10000);
 }
 
+// --- Validation unit tests ---
+
 #[test]
-fn test_require_admin_helper() {
-    let (_env, admin, client) = setup();
-    let _user = Address::generate(&_env);
-    
-    // Should succeed
-    client.set_fee_bps(&admin, &200);
-    assert_eq!(client.get_fee_bps(), 200);
-    
-    // Should panic due to mock_all_auths being enabled, 
-    // but the helper uses require_auth() which will check the signature.
-    // In setup() we have env.mock_all_auths(), so any address works if it's the admin.
+fn test_validate_fee_bps_valid() {
+    use crate::validation::validate_fee_bps;
+    assert!(validate_fee_bps(0).is_ok());
+    assert!(validate_fee_bps(500).is_ok());
+    assert!(validate_fee_bps(10000).is_ok());
 }
 
 #[test]
-fn test_fee_collected_event_emitted() {
-    let (_env, _admin, _client) = setup();
-    // Verification logic can be expanded here if needed
+fn test_validate_fee_bps_invalid() {
+    use crate::validation::validate_fee_bps;
+    use crate::FeeContractError;
+    assert_eq!(validate_fee_bps(10001), Err(FeeContractError::InvalidConfig));
+    assert_eq!(validate_fee_bps(99999), Err(FeeContractError::InvalidConfig));
+}
+
+#[test]
+fn test_validate_min_fee_valid() {
+    use crate::validation::validate_min_fee;
+    assert!(validate_min_fee(0).is_ok());
+    assert!(validate_min_fee(100).is_ok());
+    assert!(validate_min_fee(1000000).is_ok());
+}
+
+#[test]
+fn test_validate_min_fee_invalid() {
+    use crate::validation::validate_min_fee;
+    use crate::FeeContractError;
+    assert_eq!(validate_min_fee(-1), Err(FeeContractError::InvalidConfig));
+    assert_eq!(validate_min_fee(-1000), Err(FeeContractError::InvalidConfig));
 }
