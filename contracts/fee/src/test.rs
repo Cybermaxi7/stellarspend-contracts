@@ -119,3 +119,31 @@ fn test_get_fee_balance_returns_zero_initially() {
     // Initially, fee balance should be zero
     assert_eq!(client.get_fee_balance(), 0);
 }
+
+#[test]
+fn test_reset_fee_config_restores_defaults() {
+    let (env, admin, client) = setup();
+    
+    // Change the config first
+    client.set_fee_bps(&admin, &1000u32);
+    client.set_min_fee(&admin, &100i128);
+    
+    // Verify changes
+    assert_eq!(client.get_fee_bps(), 1000);
+    assert_eq!(client.get_min_fee(), 100);
+    
+    // Reset config
+    client.reset_fee_config(&admin);
+    
+    // Verify defaults restored (DEFAULT_FEE_BPS = 500, DEFAULT_MIN_FEE = 0)
+    assert_eq!(client.get_fee_bps(), 500);
+    assert_eq!(client.get_min_fee(), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_reset_fee_config_unauthorized_panics() {
+    let (env, _admin, client) = setup();
+    let non_admin = Address::generate(&env);
+    client.reset_fee_config(&non_admin);
+}

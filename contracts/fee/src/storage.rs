@@ -3,6 +3,12 @@ use soroban_sdk::{contracttype, Address, Env, Symbol};
 pub const MAX_BATCH_SIZE: u32 = 100;
 pub const MAX_FEE_BPS: u32 = 10_000;
 
+/// Default fee basis points (5% = 500 bps)
+pub const DEFAULT_FEE_BPS: u32 = 500;
+
+/// Default minimum fee (0)
+pub const DEFAULT_MIN_FEE: i128 = 0;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct BatchFeeResult {

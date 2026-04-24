@@ -15,4 +15,10 @@ impl TierEvents {
         let topics = (symbol_short!("tier"), symbol_short!("removed"));
         env.events().publish(topics, (admin.clone(), user.clone()));
     }
+
+    /// Emitted when an admin resets fee configuration to defaults.
+    pub fn fee_config_reset(env: &Env, admin: &Address) {
+        let topics = (symbol_short!("fee"), symbol_short!("reset"));
+        env.events().publish(topics, admin.clone());
+    }
 }
